@@ -4,6 +4,7 @@ import { useAddUser } from "../hooks/useAddUser";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../Firebase/firebase";
+import axios from "axios"; 
 
 const SignUp = () => {
   const [name, setName] = useState("");
@@ -11,6 +12,7 @@ const SignUp = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const { addUser } = useAddUser();
+  const [profilePic, setProfilePic] = useState(null); 
   const {isAuth}=useGetUserInfo()
   const navigate = useNavigate();
 
@@ -26,25 +28,37 @@ const SignUp = () => {
     
     try {
   
-      const result= await createUserWithEmailAndPassword(auth, email, password);
-      console.log(result)
-     
+      // 1. Upload the profile picture to Cloudinary
+      let profilePicUrl = "";
+      if (profilePic) {
+        const formData = new FormData();
+        formData.append("file", profilePic);
+        formData.append("upload_preset", "ml_default");  // Add your Cloudinary upload preset here
+
+        const response = await axios.post(
+          "https://api.cloudinary.com/v1_1/dzlr1rtln/image/upload",
+          formData
+        );
+        profilePicUrl = response.data.secure_url;  // URL of the uploaded image
+      }
+
+      // 2. Create the user with Firebase Auth
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      console.log(result);
 
       const authInfo = {
         userId: result.user.uid,
         displayName: name,
         email: result.user.email,
         isAuth: true,
+        profilePicUrl,  // Save the Cloudinary URL
       };
 
-      addUser({ 
-        email,
-        name 
-      });
+      // 3. Add user to your Firebase Firestore
+      addUser({ email, name, profilePicUrl });
 
       localStorage.setItem("auth-info", JSON.stringify(authInfo));
       navigate("/home");
-
     } 
     catch (err) {
 
@@ -63,6 +77,10 @@ const SignUp = () => {
   const handleGoogleSignup = () => {
     console.log("Sign up with Google");
     // Add your Google signup logic here
+  };
+
+  const handleFileChange = (e) => {
+    setProfilePic(e.target.files[0]);  // Set the selected file to state
   };
 
   return (
@@ -117,6 +135,19 @@ const SignUp = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+            />
+          </div>
+           {/* Profile Picture Upload */}
+           <div className="mb-4">
+            <label htmlFor="profilePic" className="block text-sm font-medium text-gray-700 mb-1">
+              Profile Picture
+            </label>
+            <input
+              type="file"
+              id="profilePic"
+              accept="image/*"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={handleFileChange}
             />
           </div>
           <button

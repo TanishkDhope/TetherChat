@@ -1,37 +1,66 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useContext } from "react";
 import { auth } from "../Firebase/firebase";
 import { signOut } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
-import { io } from "socket.io-client";
+import { connect, io } from "socket.io-client";
+import { X, UserPlus } from 'lucide-react';
+import {nanoid} from "nanoid"
+import { socketContext } from "../contexts/socketContext";
+
 
 function Home() {
   const navigate = useNavigate();
-  const {  isAuth, displayName } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
+  const {  isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const socket = useMemo(() => io("http://localhost:5000"), []);
+  const { socket, setSocket } = useContext(socketContext);
+  setSocket(useMemo(() => io("http://localhost:5000"), []));
+
+
+
+  const [joinInfo,setJoinInfo]=useState({})
+
+  
 
 
   useEffect(() => {
     if (!isAuth) {
+
       navigate("/");
     }
   }, [isAuth, navigate]);
 
+ 
+
   useEffect(() => {
-    if (displayName) {
-      socket.emit("join", displayName);
+
+    if (displayName && socket) 
+      {
+      socket.emit("join", {displayName, profilePicUrl});
 
       socket.on("onlineUsers", (users) => {
-        console.log("Online users:", users);
         setOnlineUsers(users);
       });
 
-      return () => {
-        socket.disconnect();
-      };
+      socket.on("requestJoin", ({from,roomId})=>{
+        setJoinInfo({from,roomId})
+        socket.emit("joinRoom", roomId)
+        setIsVisible(true);
+      })
+
+
+     
     }
-  }, [socket, displayName]);
+  }, [displayName, socket]);
+
+
+  const handleJoinRoom = (user) => {
+    const roomId = nanoid();
+    socket.emit("joinRoom", roomId);
+    setJoinInfo({from: displayName, roomId});
+    navigate(`/chat/${roomId}`);
+    socket.emit("requestJoin", {from: displayName, to: user.id, roomId});
+  }
 
   const handleSignOut = async () => {
     try {
@@ -44,13 +73,25 @@ function Home() {
     }
   };
 
+  const [isVisible, setIsVisible] = useState(false);
+
+
+  const handleAccept = () => {
+    setIsVisible(false);
+    navigate(`/chat/${joinInfo.roomId}`);
+  };
+
+  const handleDecline = () => {
+    setIsVisible(false);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       {/* Header with Display Name and Icon */}
       <header className="bg-white shadow-lg p-4 flex justify-between items-center">
         <div className="flex items-center space-x-4">
           <img
-            src={"https://i.pravatar.cc/120"}
+            src={profilePicUrl || "https://i.pravatar.cc/120"}
             alt="Profile"
             className="w-15 h-15 rounded-full"
           />
@@ -74,18 +115,20 @@ function Home() {
         </p>
       </main>
 
+
       {/* Online Users List */}
       <footer className="bg-white shadow-lg p-4">
         <h3 className="text-lg font-bold text-gray-800 mb-2">Online Users</h3>
         <ul className="space-y-2">
-          {onlineUsers.length > 0 ? (
+          {onlineUsers?.length > 0 ? (
             onlineUsers.map((user, index) => (
               <li
                 key={index}
+                onClick={()=>handleJoinRoom(user)}
                 className="flex items-center space-x-4 p-2 bg-gray-100 rounded-lg"
               >
                 <img
-                  src={"https://i.pravatar.cc/120"}
+                  src={user.profilePicUrl}
                   className="w-20 h-20 rounded-full"
                 />
                 <span className="text-gray-700 font-medium">{user.name}</span>
@@ -96,6 +139,46 @@ function Home() {
           )}
         </ul>
       </footer>
+      <div
+      className={`fixed bottom-4 right-4 transform transition-all duration-500 ease-in-out ${
+        isVisible ? 'translate-x-0' : 'translate-x-full'
+      }`}
+    >
+      <div className="bg-white rounded-lg shadow-lg p-4 flex items-center gap-4 border border-gray-200 max-w-md">
+        <div className="bg-blue-100 p-2 rounded-full">
+          <UserPlus className="w-6 h-6 text-blue-600" />
+        </div>
+
+        <div className="flex-1">
+          <h3 className="font-medium text-gray-900">Room Join Request</h3>
+          <p className="text-sm text-gray-600">
+            {joinInfo.from} wants you to join room {joinInfo.roomId?joinInfo.roomId:"No Room Id"}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleAccept}
+            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Accept
+          </button>
+          <button
+            onClick={handleDecline}
+            className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 transition-colors"
+          >
+            Decline
+          </button>
+        </div>
+
+        <button
+          onClick={handleDecline}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
     </div>
   );
 }

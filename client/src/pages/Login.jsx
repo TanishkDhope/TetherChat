@@ -27,10 +27,12 @@ const Login = () => {
     try {
       const result=await signInWithEmailAndPassword(auth, email, password);
       console.log(result.user.email);
+      const {displayName,profilePicUrl} = await getUsername(result.user.email);
       const authInfo= {
-        displayName: await getUsername(result.user.email),
+        displayName,
         userId: result.user.uid,
         email: result.user.email,
+        profilePicUrl,
         isAuth: true,
       }
       localStorage.setItem("auth-info", JSON.stringify(authInfo))

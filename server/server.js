@@ -9,6 +9,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 let onlineUsers = [];
+let rooms = [];
 
 const io = new Server(server, {
   cors: {
@@ -20,20 +21,73 @@ const io = new Server(server, {
 app.use(cors());
 
 io.on("connection", (socket) => {
-    socket.emit("connection", { socketId: socket.id });
-    console.log("A user connected with socket ID:", socket.id);
-
-    socket.on("join", (displayName) => {
-      onlineUsers.push({ id: socket.id, name: displayName }); 
-      console.log("User joined:", displayName);
-      io.emit("onlineUsers", onlineUsers); 
-    });
+  socket.emit("connection", { socketId: socket.id });
+  console.log("A user connected with socket ID:", socket.id);
 
 
-    socket.on("disconnect", () => {
-       onlineUsers = onlineUsers.filter((user) => user.id !== socket.id); 
-    console.log("A user disconnected. Remaining users:", onlineUsers);
-    io.emit("onlineUsers", onlineUsers); 
+  //USER LOGIC
+
+  socket.on("join", ({ displayName, profilePicUrl }) => {
+    if (onlineUsers.find((user) => user.name === displayName)) {
+      console.log("User already exists:", displayName);
+      onlineUsers = onlineUsers.map((user) =>
+        user.name == displayName
+          ? { id: socket.id, name: displayName, profilePicUrl }
+          : user
+      );
+      io.emit("onlineUsers", onlineUsers);
+      return;
+    }
+    onlineUsers.push({ id: socket.id, name: displayName, profilePicUrl });
+    console.log("User joined:", displayName);
+    io.emit("onlineUsers", onlineUsers);
+  });
+
+  //ROOM JOIN LOGIC
+
+  socket.on("requestJoin", ({ from, to, roomId }) => {
+    socket.to(to).emit("requestJoin", { from, roomId });
+  });
+
+
+  socket.on("joinRoom", (roomId) => {
+    socket.join(roomId);
+    if (!rooms.find((room) => room.id === roomId)) {
+      rooms.push({ id: roomId, users: [] });
+    }
+    if (!rooms.find((room) => room.id === roomId).users.find((user) => user.id === socket.id)) {
+      rooms.find((room) => room.id === roomId).users.push({
+        id: socket.id,
+        name: onlineUsers.find((user) => user.id === socket.id).name,
+        profilePicUrl: onlineUsers.find((user) => user.id === socket.id)
+          .profilePicUrl,
+      });
+    }
+    //delete empty rooms
+    rooms = rooms.filter((room) => room.users.length > 0);
+    
+  });
+
+  socket.on("leaveRoom", (roomId, socketId) => {
+    rooms.find((room) => room.id === roomId).users = rooms.find((room) => room.id === roomId).users.filter(
+      (user) => user.id !== socketId
+    );
+    console.log(rooms)
+  })
+
+  socket.on("get-room-info", (roomId) => {
+    socket.emit("room-info", rooms.find((room) => room.id === roomId));
+  });
+
+  //MESSAGES LOGIC  
+  socket.on("send-message", (message, roomId) => {
+    socket.to(roomId).emit("recieve-message", message);
+  })
+
+  socket.on("disconnect", () => {
+    onlineUsers = onlineUsers.filter((user) => user.id !== socket.id);
+    console.log("A user disconnected with socket ID:", socket.id);
+    io.emit("onlineUsers", onlineUsers);
   });
 });
 
