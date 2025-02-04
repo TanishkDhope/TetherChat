@@ -50,22 +50,37 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on("joinRoom", (roomId) => {
+  
+  socket.on("joinRoom", (roomId, displayName) => {
     socket.join(roomId);
-    if (!rooms.find((room) => room.id === roomId)) {
-      rooms.push({ id: roomId, users: [] });
+  
+    // Find the room or create a new one if it doesn't exist
+    let room = rooms.find((room) => room.id === roomId);
+    if (!room) {
+      room = { id: roomId, users: [] };
+      rooms.push(room);
     }
-    if (!rooms.find((room) => room.id === roomId).users.find((user) => user.id === socket.id)) {
-      rooms.find((room) => room.id === roomId).users.push({
-        id: socket.id,
-        name: onlineUsers.find((user) => user.id === socket.id).name,
-        profilePicUrl: onlineUsers.find((user) => user.id === socket.id)
-          .profilePicUrl,
-      });
+  
+    // Check if the user is already in the room
+    const existingUser = room.users.find((user) => user.name === displayName);
+  
+    if (existingUser) {
+      // If the user exists, update their socket ID
+      existingUser.id = socket.id;
+    } else {
+      // If the user doesn't exist, add them to the room
+      const onlineUser = onlineUsers.find((user) => user.id === socket.id);
+      if (onlineUser) {
+        room.users.push({
+          id: socket.id,
+          name: onlineUser.name,
+          profilePicUrl: onlineUser.profilePicUrl,
+        });
+      }
     }
-    //delete empty rooms
+  
+    // Remove empty rooms
     rooms = rooms.filter((room) => room.users.length > 0);
-    
   });
 
   socket.on("leaveRoom", (roomId, socketId) => {
@@ -91,6 +106,6 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
+server.listen(process.env.PORT || 5000, () => {
   console.log(`Server is running on port ${process.env.PORT || 3000}`);
 });

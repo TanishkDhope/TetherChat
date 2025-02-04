@@ -7,6 +7,7 @@ import { connect, io } from "socket.io-client";
 import { X, UserPlus } from 'lucide-react';
 import {nanoid} from "nanoid"
 import { socketContext } from "../contexts/socketContext";
+import {GetRoomInfo} from "../hooks/useGetRoomInfo"
 
 
 function Home() {
@@ -15,14 +16,10 @@ function Home() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const { socket, setSocket } = useContext(socketContext);
   setSocket(useMemo(() => io("http://localhost:5000"), []));
-
-
-
   const [joinInfo,setJoinInfo]=useState({})
 
-  
 
-
+ 
   useEffect(() => {
     if (!isAuth) {
 
@@ -30,7 +27,7 @@ function Home() {
     }
   }, [isAuth, navigate]);
 
- 
+
 
   useEffect(() => {
 
@@ -44,19 +41,28 @@ function Home() {
 
       socket.on("requestJoin", ({from,roomId})=>{
         setJoinInfo({from,roomId})
+        localStorage.setItem(from, roomId);
         socket.emit("joinRoom", roomId)
         setIsVisible(true);
       })
-
-
-     
     }
   }, [displayName, socket]);
 
 
   const handleJoinRoom = (user) => {
+   
+    const ExistRoom=GetRoomInfo(user.name)
+    console.log(ExistRoom)
+    if(ExistRoom.roomId){
+      socket.emit("joinRoom", ExistRoom.roomId);
+      setJoinInfo({from: displayName, roomId: ExistRoom.roomId});
+      socket.emit("requestJoin", {from: displayName, to: user.id, roomId: ExistRoom.roomId});
+      navigate(`/chat/${ExistRoom.roomId}`);
+      return
+    }
     const roomId = nanoid();
     socket.emit("joinRoom", roomId);
+    console.log("Hello")
     setJoinInfo({from: displayName, roomId});
     navigate(`/chat/${roomId}`);
     socket.emit("requestJoin", {from: displayName, to: user.id, roomId});

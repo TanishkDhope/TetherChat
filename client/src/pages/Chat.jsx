@@ -61,7 +61,7 @@ const {displayName, profilePicUrl}=useGetUserInfo()
       if (displayName,socket) 
         {
         socket.emit("join", {displayName, profilePicUrl});
-        socket.emit("joinRoom", roomId)
+        socket.emit("joinRoom", roomId, displayName)
         localStorage.setItem("roomId", roomId)
         console.log("Room id changed")
         socket.emit("get-room-info", roomId)
@@ -71,7 +71,7 @@ const {displayName, profilePicUrl}=useGetUserInfo()
   
   useEffect(()=>{
     if(socket){
-    socket.emit("joinRoom", roomId)
+    socket.emit("joinRoom", roomId, displayName)
     localStorage.setItem("roomId", roomId)
     console.log("Room id changed")
     socket.emit("get-room-info", roomId)
