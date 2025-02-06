@@ -3,6 +3,8 @@ import cors from "cors";
 import http from "http";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
+import {nanoid} from "nanoid"
+
 
 dotenv.config();
 
@@ -10,6 +12,8 @@ const app = express();
 const server = http.createServer(app);
 let onlineUsers = [];
 let rooms = [];
+let chats={}
+
 
 const io = new Server(server, {
   cors: {
@@ -47,6 +51,20 @@ io.on("connection", (socket) => {
 
   socket.on("requestJoin", ({ from, to, roomId }) => {
     socket.to(to).emit("requestJoin", { from, roomId });
+  });
+
+  //GROUP CREATION LOGIC
+  socket.on("createGroup", (data) => {
+    const group = {
+      id: nanoid(),
+      name: data.groupName,
+      users: data.users,
+    };
+    socket.emit("groupCreated", group);
+  });
+
+  socket.on("deleteGroup", (groupId) => {
+    
   });
 
 
@@ -104,6 +122,7 @@ io.on("connection", (socket) => {
     console.log("A user disconnected with socket ID:", socket.id);
     io.emit("onlineUsers", onlineUsers);
   });
+
 });
 
 server.listen(process.env.PORT || 5000, () => {

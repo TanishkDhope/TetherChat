@@ -1,32 +1,58 @@
-import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
-import {useParams} from 'react-router-dom';
-import { Send, Smile, Sticker } from 'lucide-react';
+import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
+import { useParams } from "react-router-dom";
+import { Send, Smile, Sticker } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
-import { io } from 'socket.io-client';
-import { useGetUserInfo } from '../hooks/useGetUserInfo';
-
-
+import { io } from "socket.io-client";
+import { useGetUserInfo } from "../hooks/useGetUserInfo";
 
 const STICKER_PACKS = {
   basic: [
-    '👍', '❤️', '😊', '🎉', '🌟', '🔥', '👋', '🤝',
-    '✨', '💯', '🏆', '🎮', '🎸', '🎨', '📚', '💻'
+    "👍",
+    "❤️",
+    "😊",
+    "🎉",
+    "🌟",
+    "🔥",
+    "👋",
+    "🤝",
+    "✨",
+    "💯",
+    "🏆",
+    "🎮",
+    "🎸",
+    "🎨",
+    "📚",
+    "💻",
   ],
   animals: [
-    '🐶', '🐱', '🐼', '🐨', '🦊', '🦁', '🐯', '🐮',
-    '🐷', '🐸', '🐙', '🦋', '🐬', '🦜', '🦆', '🦉'
-  ]
+    "🐶",
+    "🐱",
+    "🐼",
+    "🐨",
+    "🦊",
+    "🦁",
+    "🐯",
+    "🐮",
+    "🐷",
+    "🐸",
+    "🐙",
+    "🦋",
+    "🐬",
+    "🦜",
+    "🦆",
+    "🦉",
+  ],
 };
 
 const EMOJI_GROUPS = [
-  ['😀', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍'],
-  ['😎', '🤩', '😋', '😆', '😄', '🥰', '😘', '😗'],
-  ['🤔', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄'],
-  ['😳', '😱', '😨', '😰', '😢', '😥', '😭', '😫']
+  ["😀", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍"],
+  ["😎", "🤩", "😋", "😆", "😄", "🥰", "😘", "😗"],
+  ["🤔", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄"],
+  ["😳", "😱", "😨", "😰", "😢", "😥", "😭", "😫"],
 ];
 
 const Chat = () => {
-  const {roomId}=useParams()
+  const { roomId } = useParams();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
@@ -34,8 +60,8 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const emojiRef = useRef(null);
   const stickerRef = useRef(null);
-  const {socket, setSocket}=useContext(socketContext)
-const {displayName, profilePicUrl}=useGetUserInfo()
+  const { socket, setSocket } = useContext(socketContext);
+  const { displayName, profilePicUrl } = useGetUserInfo();
   const [sender, setSender] = useState("User");
   const [inRoom, setInRoom] = useState([]);
 
@@ -45,7 +71,6 @@ const {displayName, profilePicUrl}=useGetUserInfo()
       const newSocket = io("http://localhost:5000");
       setSocket(newSocket);
     }
-  
     return () => {
       // Optionally, disconnect socket when the component unmounts (if needed)
       if (socket) {
@@ -53,54 +78,67 @@ const {displayName, profilePicUrl}=useGetUserInfo()
         console.log("Socket disconnected on unmount");
       }
     };
-  }, [socket, setSocket]); 
+  }, [socket, setSocket]);
 
-  
-    useEffect(() => {
-  
-      if (displayName,socket) 
-        {
-        socket.emit("join", {displayName, profilePicUrl});
-        socket.emit("joinRoom", roomId, displayName)
-        localStorage.setItem("roomId", roomId)
-        console.log("Room id changed")
-        socket.emit("get-room-info", roomId)
-  
-      }
-    }, [displayName, socket]);
-  
-  useEffect(()=>{
-    if(socket){
-    socket.emit("joinRoom", roomId, displayName)
-    localStorage.setItem("roomId", roomId)
-    console.log("Room id changed")
-    socket.emit("get-room-info", roomId)
+  useEffect(() => {
+    if (displayName && socket) {
+      socket.emit("join", { displayName, profilePicUrl });
+      socket.emit("joinRoom", roomId, displayName);
+      socket.emit("get-room-info", roomId);
+      localStorage.setItem("roomId", roomId);
     }
-  },[roomId])
+  }, [displayName, roomId, socket]);
 
-  useEffect(()=>{
-    if(socket){
+  //SAVE AND LOAD MESSAGES
+  useEffect(() => {
+    if(sender!=="User")
+    {
+    // Save messages to local storage whenever messages change
+    localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
+    }
+  }, [messages, roomId]);
+  
+  useEffect(() => {
+    // Load messages from local storage on initial render
+    const savedMessages = localStorage.getItem(`messages_${roomId}`);
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+      
+    }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (socket) {
+      //Chats
+
+
+      //ROOM INFO
       socket.on("room-info", (roomInfo) => {
-        setInRoom(roomInfo.users)
-        console.log(roomInfo.users)
-      })  
+        setInRoom(roomInfo.users);
+      });
 
       socket.on("recieve-message", (message) => {
-        setMessages(prev => [...prev, {...message, sender: "other"}]);
-        console.log(message)
+        setMessages((prev) => {
+          // Avoid duplicating messages
+          const isDuplicate = prev.some(m => m.id === message.id);
+          return isDuplicate 
+            ? prev 
+            : [...prev, { ...message, sender: "other" }];
+        });
+       
       });
     }
-  },[socket])
+  }, [socket]);
 
-  useEffect(()=>{
-    if(socket){
-    inRoom.forEach(user=>{
-      if(user.id!==socket.id){
-        console.log(user.name)
-        setSender(user.name)
+  useEffect(() => {
+    if (socket) {
+      const matchingUser = inRoom.find((user) => user.id !== socket.id);
+      if (matchingUser) {
+        setSender(matchingUser.name);
       }
-    })}
-  },[inRoom,setInRoom])
+    }
+  }, [inRoom, socket]);
+
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -112,12 +150,10 @@ const {displayName, profilePicUrl}=useGetUserInfo()
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () =>{ 
-      document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
     };
-
-    
   }, []);
 
   const scrollToBottom = () => {
@@ -135,19 +171,20 @@ const {displayName, profilePicUrl}=useGetUserInfo()
     const message = {
       id: Date.now(),
       text: newMessage,
-      sender: "user",
+      sender: "user", // Make sure sender is "user"
       type: "text",
-      timestamp: new Date()
+      timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
 
-    socket.emit("send-message", message, roomId)
+    socket.emit("send-message", message, roomId);
+    
 
-    setMessages(prev => [...prev, message]);
+    setMessages((prev) => [...prev, message]);
     setNewMessage("");
   };
 
   const addEmoji = (emoji) => {
-    setNewMessage(prev => prev + emoji);
+    setNewMessage((prev) => prev + emoji);
     setShowEmojis(false);
   };
 
@@ -157,12 +194,12 @@ const {displayName, profilePicUrl}=useGetUserInfo()
       text: sticker,
       sender: "user",
       type: "sticker",
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
-    socket.emit("send-message", message, roomId)
-    
-    setMessages(prev => [...prev, message]);
+    socket.emit("send-message", message, roomId);
+
+    setMessages((prev) => [...prev, message]);
     setShowStickers(false);
   };
 
@@ -179,35 +216,44 @@ const {displayName, profilePicUrl}=useGetUserInfo()
         </div>
 
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          
+        {sender !== "User" && (
+  <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${
+                message.sender === "user" ? "justify-end" : "justify-start"
+              }`}
             >
               <div
                 className={`max-w-[70%] rounded-lg p-3 shadow-sm ${
-                  message.sender === 'user'
-                    ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                } ${message.type === 'sticker' ? 'text-4xl bg-transparent !p-0' : ''}`}
+                  message.sender === "user"
+                    ? "bg-blue-500 text-white rounded-br-none"
+                    : "bg-gray-100 text-gray-800 rounded-bl-none"
+                } ${
+                  message.type === "sticker"
+                    ? "text-4xl bg-gray p-3"
+                    : ""
+                }`}
               >
                 <p className="break-words">{message.text}</p>
                 <span className="text-xs opacity-70 mt-1 block">
-                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(message.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
               </div>
             </div>
           ))}
           <div ref={messagesEndRef} />
-        </div>
+        </div>)}
 
         {/* Input Form */}
         <div className="relative px-4 pb-4">
           {/* Emoji Picker */}
           {showEmojis && (
-            <div 
+            <div
               ref={emojiRef}
               className="absolute bottom-full right-16 mb-2 bg-white rounded-lg shadow-lg p-4 border"
             >
@@ -227,14 +273,16 @@ const {displayName, profilePicUrl}=useGetUserInfo()
 
           {/* Sticker Picker */}
           {showStickers && (
-            <div 
+            <div
               ref={stickerRef}
               className="absolute bottom-full right-16 mb-2 bg-white rounded-lg shadow-lg p-4 border"
             >
               <div className="space-y-4">
                 {Object.entries(STICKER_PACKS).map(([pack, stickers]) => (
                   <div key={pack}>
-                    <h3 className="text-sm font-semibold mb-2 capitalize">{pack}</h3>
+                    <h3 className="text-sm font-semibold mb-2 capitalize">
+                      {pack}
+                    </h3>
                     <div className="grid grid-cols-8 gap-2">
                       {stickers.map((sticker, index) => (
                         <button
@@ -252,7 +300,7 @@ const {displayName, profilePicUrl}=useGetUserInfo()
             </div>
           )}
 
-          <form 
+          <form
             onSubmit={handleSubmit}
             className="bg-white p-4 flex items-center gap-2 border rounded-lg shadow-sm"
           >
