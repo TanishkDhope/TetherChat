@@ -4,6 +4,7 @@ import { Send, Smile, Sticker } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
+import { useFirestore } from "../hooks/useFirestore";
 
 const STICKER_PACKS = {
   basic: [
@@ -62,8 +63,50 @@ const Chat = () => {
   const stickerRef = useRef(null);
   const { socket, setSocket } = useContext(socketContext);
   const { displayName, profilePicUrl } = useGetUserInfo();
-  const [sender, setSender] = useState("User");
+  const [sender, setSender] = useState("");
   const [inRoom, setInRoom] = useState([]);
+  const {storeMessages, getMessages}=useFirestore()
+  const [dbMessages, setDbMessages] = useState([]);
+
+  const senderRef = useRef(sender); 
+
+  useEffect(() => {
+    senderRef.current = sender; // Update ref when sender changes
+    const getMessg=async()=>{
+      const localMessages = localStorage.getItem(`messages_${roomId}`);
+      if(!localMessages)
+      { 
+          console.log("DisplayName: ",displayName)
+          console.log("sender: ",senderRef.current)
+          const myMessages= await getMessages(displayName, senderRef.current);
+          setDbMessages(myMessages);
+      }
+      
+      if(localMessages) 
+      {
+        setMessages(JSON.parse(localMessages));
+        console.log("Local Messages Loaded")
+      }
+      else if(dbMessages)
+      {
+        setMessages(dbMessages);
+        console.log("DB Messages Loaded")
+      }
+      }
+      getMessg()
+     
+
+    
+   
+  }, [sender]);
+
+  const messagesRef = useRef(messages); // Create a ref to hold messages
+
+useEffect(() => {
+  messagesRef.current = messages; // Keep ref updated with latest messages
+}, [messages]);
+
+
 
   useEffect(() => {
     // Check if the socket already exists, and if not, establish a new connection
@@ -74,8 +117,19 @@ const Chat = () => {
     return () => {
       // Optionally, disconnect socket when the component unmounts (if needed)
       if (socket) {
-        socket.disconnect();
+        if (messagesRef.current.length > 0) {
+          const mssg=JSON.parse(localStorage.getItem(`messages_${roomId}`))
+          if(dbMessages.length!==messages.length)
+          {
+            storeMessages(displayName, senderRef.current, mssg)
+            console.log("CHANGES NEEDED")
+          }
+          else{
+            console.log("NO CHANGES Needed")
+          }
+        }
         console.log("Socket disconnected on unmount");
+        socket.disconnect();
       }
     };
   }, [socket, setSocket]);
@@ -85,33 +139,25 @@ const Chat = () => {
       socket.emit("join", { displayName, profilePicUrl });
       socket.emit("joinRoom", roomId, displayName);
       socket.emit("get-room-info", roomId);
-      localStorage.setItem("roomId", roomId);
+     
     }
   }, [displayName, roomId, socket]);
 
   //SAVE AND LOAD MESSAGES
   useEffect(() => {
-    if(sender!=="User")
-    {
-    // Save messages to local storage whenever messages change
-    localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
+    if (messages.length > 0) { 
+      localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
     }
   }, [messages, roomId]);
   
+  
   useEffect(() => {
     // Load messages from local storage on initial render
-    const savedMessages = localStorage.getItem(`messages_${roomId}`);
-    if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
-      
-    }
+    
   }, [roomId]);
 
   useEffect(() => {
     if (socket) {
-      //Chats
-
-
       //ROOM INFO
       socket.on("room-info", (roomInfo) => {
         setInRoom(roomInfo.users);
@@ -138,6 +184,8 @@ const Chat = () => {
       }
     }
   }, [inRoom, socket]);
+  
+  
 
 
   useEffect(() => {

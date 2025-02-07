@@ -48,7 +48,6 @@ function Home() {
 
       socket.on("groupCreated", (group) => {
         setGroups((prev) => [...prev, group]);
-        console.log(group)
       });
 
       socket.on("userCreated", (chat) => {
@@ -59,21 +58,16 @@ function Home() {
 
   const handleJoinRoom = (user) => {
     const ExistRoom = GetRoomInfo(user.name);
-    console.log(ExistRoom);
+    let roomId
     if (ExistRoom.roomId) {
-      socket.emit("joinRoom", ExistRoom.roomId);
-      setJoinInfo({ from: displayName, roomId: ExistRoom.roomId });
-      socket.emit("requestJoin", {
-        from: displayName,
-        to: user.id,
-        roomId: ExistRoom.roomId,
-      });
-      navigate(`/chat/${ExistRoom.roomId}`);
-      return;
+      roomId=ExistRoom.roomId;
     }
-    const roomId = nanoid();
+    else
+    {
+      roomId = nanoid();
+    }
     socket.emit("joinRoom", roomId);
-    console.log("Hello");
+    localStorage.setItem(user.name, roomId);
     setJoinInfo({ from: displayName, roomId });
     navigate(`/chat/${roomId}`);
     socket.emit("requestJoin", { from: displayName, to: user.id, roomId });
