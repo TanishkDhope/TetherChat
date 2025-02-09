@@ -4,6 +4,7 @@ import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { useGetUserName } from "../hooks/useGetUsername";
+import { useAddUser } from "../hooks/useAddUser";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -12,6 +13,7 @@ const Login = () => {
   const { isAuth } = useGetUserInfo();
   const { getUsername } = useGetUserName();
   const navigate = useNavigate();
+  const {addUser}=useAddUser()
 
   useEffect(() => {
     if (isAuth) {
@@ -117,6 +119,8 @@ const Login = () => {
               </label>
               <div className="mt-2">
                 <input
+                  id="email"
+                  required
                   placeholder="Email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
