@@ -111,7 +111,7 @@ const Chat = () => {
   useEffect(() => {
     // Check if the socket already exists, and if not, establish a new connection
     if (!socket) {
-      const newSocket = io("http://localhost:5000");
+      const newSocket = io("https://chatapp-dcac.onrender.com");
       setSocket(newSocket);
     }
     return () => {

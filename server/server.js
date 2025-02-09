@@ -12,7 +12,6 @@ const app = express();
 const server = http.createServer(app);
 let onlineUsers = [];
 let rooms = [];
-let chats={}
 
 
 const io = new Server(server, {
@@ -125,6 +124,10 @@ io.on("connection", (socket) => {
 
 });
 
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
+
 server.listen(process.env.PORT || 5000, () => {
-  console.log(`Server is running on port ${process.env.PORT || 3000}`);
+  console.log(`Server is running on port ${process.env.PORT}`);
 });

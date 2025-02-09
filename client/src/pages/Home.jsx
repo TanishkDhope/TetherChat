@@ -30,7 +30,7 @@ function Home() {
   const { isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
   const [onlineUsers, setOnlineUsers] = useState([]);
   const { socket, setSocket } = useContext(socketContext);
-  setSocket(useMemo(() => io("http://localhost:5000"), []));
+  setSocket(useMemo(() => io("https://chatapp-dcac.onrender.com"), []));
   const [joinInfo, setJoinInfo] = useState({});
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
