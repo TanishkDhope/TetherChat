@@ -119,7 +119,9 @@ const Chat = () => {
       if (socket) {
         if (messagesRef.current.length > 0) {
           const mssg = JSON.parse(localStorage.getItem(`messages_${roomId}`));
-          if (dbMessages.length !== messages.length) {
+          console.log("local messages: ", messagesRef.length);
+          console.log("db messages: ", dbMessages.length);
+          if (dbMessages.length !== messagesRef.length) {
             storeMessages(displayName, senderRef.current, mssg);
             console.log("CHANGES NEEDED");
           } else {

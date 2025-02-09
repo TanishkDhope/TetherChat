@@ -195,7 +195,7 @@ function Home() {
           {showProfile && (
             <div
               ref={profileRef}
-              className="p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-white shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
+              className="p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-gray-50 shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
             >
               <div className="p-4 gap-2 justify-start flex flex-row items-center">
                 <img

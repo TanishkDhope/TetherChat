@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MessageCircle } from 'lucide-react';
 
 export const Sidebar=({ onlineUsers, groups, handleJoinRoom })=> {
 
@@ -11,15 +12,34 @@ export const Sidebar=({ onlineUsers, groups, handleJoinRoom })=> {
       <div className="overflow-y-auto flex-1 p-3">
         {/* Online Users Section */}
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Online Users</h3>
-        <div className="space-y-3">
-          {onlineUsers.map((user) => (
-            <div
+          <div className="space-y-3">
+            {onlineUsers.map((user) => (
+              <div
               key={user.id}
-              className="flex items-center gap-3 p-3 bg-gray-100 rounded-lg cursor-pointer hover:bg-gray-200 transition"
               onClick={() => handleJoinRoom(user)}
+              className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl 
+                         hover:border-gray-200 hover:shadow-sm transition-all duration-200 cursor-pointer"
             >
-              <img src={user.profilePicUrl || "https://i.pravatar.cc/100"} alt={user.name} className="w-10 h-10 rounded-full" />
-             <span className="text-gray-800 font-medium">{user.name}</span>
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <img 
+                    src={user.profilePicUrl || "/api/placeholder/40/40"} 
+                    alt={user.name} 
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-white"
+                  />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-gray-900 font-medium">{user.name}</span>
+                  <span className="text-sm text-gray-500">
+                    {user.status || "Available"}
+                  </span>
+                </div>
+              </div>
+              
+              <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors">
+                <MessageCircle size={20} />
+              </button>
             </div>
           ))}
         </div>

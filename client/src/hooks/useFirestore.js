@@ -8,8 +8,12 @@ export const useFirestore = () => {
             const userDocRef = doc(db, "messages", user); // User as a document
             const senderCollectionRef = collection(userDocRef, sender); // Sender as a collection
             const messageDocRef = doc(senderCollectionRef, "latest"); // Single document for messages
+            const lastMessage=messages[messages.length-1]
+            // const lastMessageRef=doc(senderCollectionRef, "lastMessage") //Store Last Message
+            
       
             await setDoc(messageDocRef, { messages }, { merge: false });
+            // await setDoc(lastMessageRef, lastMessage, { merge: false });
       
             console.log("Messages stored successfully!");
           } catch (error) {
