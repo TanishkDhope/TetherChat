@@ -44,7 +44,7 @@ export const Sidebar=({ displayName,onlineUsers, groups, handleJoinRoom, registe
             </div>
           ))}
         </div>
-        <h3 className="text-lg font-semibold text-gray-700 mb-2">Other Users</h3>
+        {/* <h3 className="text-lg font-semibold text-gray-700 mb-2">Other Users</h3>
           <div className="space-y-3">
             {registeredUsers.filter((user) => user.name !== displayName).map((user) => {
               
@@ -77,7 +77,7 @@ export const Sidebar=({ displayName,onlineUsers, groups, handleJoinRoom, registe
               </button>
             </div>
           )})}
-        </div>
+        </div> */}
 
 
         {/* Groups Section */}
