@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { MessageCircle } from 'lucide-react';
 
-export const Sidebar=({ onlineUsers, groups, handleJoinRoom, registeredUsers })=> {
-  console.log(onlineUsers)
+export const Sidebar=({ displayName,onlineUsers, groups, handleJoinRoom, registeredUsers })=> {
+  console.log(displayName)
 
   return (
     <div 
@@ -46,8 +46,8 @@ export const Sidebar=({ onlineUsers, groups, handleJoinRoom, registeredUsers })=
         </div>
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Other Users</h3>
           <div className="space-y-3">
-            {registeredUsers.map((user) => {
-              if(onlineUsers.some(person => person.displayName === user.name)){ return };
+            {registeredUsers.filter((user) => user.name !== displayName).map((user) => {
+              
               return(
               <div
               key={user.id}

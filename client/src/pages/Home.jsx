@@ -508,6 +508,7 @@ function Home() {
       >
         <div className="flex flex-row ">
           <Sidebar
+            displayName={displayName} 
             onlineUsers={onlineUsers}
             groups={groups}
             handleJoinRoom={handleJoinRoom}
