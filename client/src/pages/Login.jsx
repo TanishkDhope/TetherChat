@@ -5,6 +5,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { useGetUserName } from "../hooks/useGetUsername";
 import { useAddUser } from "../hooks/useAddUser";
+import { useFirestore } from "../hooks/useFirestore";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -14,6 +15,7 @@ const Login = () => {
   const { getUsername } = useGetUserName();
   const navigate = useNavigate();
   const {addUser}=useAddUser()
+  const {getRegisteredUsers, addRegisteredUser}=useFirestore()
 
   useEffect(() => {
     if (isAuth) {
@@ -70,6 +72,7 @@ const Login = () => {
       const name = result.user.displayName;
       const photoURL = result.user.photoURL;
       addUser({ email, name, photoURL });
+      addRegisteredUser({email, name, photoURL})
   
       localStorage.setItem("auth-info", JSON.stringify(authInfo));
       navigate("/home");
@@ -89,10 +92,11 @@ const Login = () => {
         backgroundImage:
           "url(https://images.unsplash.com/photo-1509023464722-18d996393ca8?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
         backgroundPosition: "center", // Centers the background image
-        backgroundSize: "cover", // Ensures the image covers the entire container
+        backgroundSize: "cover", 
+        overflow: "hidden"// Ensures the image covers the entire container
       }}
-      classNameName="
-      bg-gray-100"
+      className="
+      bg-gray-100 overflow-hidden min-h-screen"
     >
       <div className="bg-white rounded-xl p-8 xl:mx-auto xl:w-full shadow-md p-4 xl:max-w-sm 2xl:max-w-md">
         <div className="mb-2 flex justify-center" />
@@ -100,11 +104,10 @@ const Login = () => {
           Sign in to your account
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Don't have an account? <Link to={"/signup"}> <a
-                  className="text-sm font-semibold text-black hover:underline"
-                  title
-                  href="#"
-                >Create a free account </a></Link>
+          Don't have an account? <Link  className="cursor-pointer hover:underlined text-sm font-semibold text-black hover:underline" to={"/signup"}> 
+                 
+                  
+                Create a free account </Link>
         </p>
         {error && (
           <div className="mt-6 bg-red-500 text-white text-center p-2 rounded mb-4">
@@ -136,7 +139,7 @@ const Login = () => {
                 </label>
                 <a
                   className="text-sm font-semibold text-black hover:underline"
-                  title
+                  
                   href="#"
                 >
                   Forgot password?

@@ -12,10 +12,22 @@ import {
   X,
   Users,
   Check,
+  LogOut,
   Trash2,
   MessageSquare,
   Heart,
-  Video, Phone, Mic, SendHorizontal, Smile, Moon, Sun, Palette, Globe
+  Video,
+  Phone,
+  Mic,
+  SendHorizontal,
+  Smile,
+  Moon,
+  Sun,
+  Palette,
+  Globe,
+  Send,
+  Bell,
+  Lock,
 } from "lucide-react";
 import { AiOutlineUser } from "react-icons/ai";
 import { RxExit } from "react-icons/rx";
@@ -24,13 +36,17 @@ import { CiCreditCard1 } from "react-icons/ci";
 import { BiSupport } from "react-icons/bi";
 import styled from "styled-components";
 import { Sidebar } from "../components/Sidebar";
+import { MdOutlineMoreVert } from "react-icons/md";
+import { useFirestore } from "../hooks/useFirestore";
+import { use } from "react";
 
 function Home() {
   const navigate = useNavigate();
+  const [registeredUsers,setRegisteredUsers] = useState([])
   const { isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
   const [onlineUsers, setOnlineUsers] = useState([]);
   const { socket, setSocket } = useContext(socketContext);
-  setSocket(useMemo(() => io("https://chatapp-dcac.onrender.com"), []));
+  setSocket(useMemo(() => io("http://localhost:5000"), []));
   const [joinInfo, setJoinInfo] = useState({});
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -41,22 +57,92 @@ function Home() {
   const [showProfile, setShowProfile] = useState(false);
   const profileRef = useRef(null);
   const userRef = useRef(null);
-  const [status, setStatus] = useState("online");
+  const menuRef = useRef(null)
+  const [isOnline, setIsOnline] = useState("online");
   const [statusMessage, setStatusMessage] = useState("");
-  const [theme, setTheme] = useState('light');
+  const [showMenu, setShowMenu] = useState(false)
+  const [theme, setTheme] = useState("light");
+  const {getRegisteredUsers }=useFirestore()
   const quickStats = [
     { icon: <Users />, label: "Online Friends", value: "12" },
     { icon: <MessageSquare />, label: "Active Chats", value: "5" },
     { icon: <Heart />, label: "Favorite Groups", value: "3" },
   ];
 
+  const [notifications, setNotifications] = useState(true);
+  const [privacyMode, setPrivacyMode] = useState(false);
+
+  const toggles = [
+    {
+      icon: <Bell />,
+      label: 'Notifications',
+      state: notifications,
+      toggle: () => setNotifications(!notifications)
+    },
+    {
+      icon: <Lock />,
+      label: 'Privacy Mode',
+      state: privacyMode,
+      toggle: () => setPrivacyMode(!privacyMode)
+    }
+  ];
+
+
+  const handleStatusUpdate = () => {
+    socket.emit("join", {
+      displayName,
+      profilePicUrl,
+      status: statusMessage,
+      isOnline,
+    });
+    console.log(statusMessage);
+
+    setStatusMessage("");
+  };
+
+  const handleOnline = () => {
+    setIsOnline((prevState) => {
+      const newStatus = prevState === "online" ? "offline" : "online";
+
+      // Emit the updated status AFTER setting state
+      socket.emit("join", {
+        displayName,
+        profilePicUrl,
+        status: statusMessage,
+        isOnline: newStatus,
+      });
+      localStorage.setItem("isOnline", newStatus);
+
+      return newStatus; // Update state with the new value
+    });
+  };
+
   useEffect(() => {
+    const getUsers = async () => {
+      const localUsers = localStorage.getItem("registeredUsers");
+      if (!localUsers) {
+        const registeredUsers = await getRegisteredUsers();
+        setRegisteredUsers(registeredUsers);
+        localStorage.setItem("registeredUsers", JSON.stringify(registeredUsers));
+        console.log("Registered Users Loaded");
+      }
+      else {
+        setRegisteredUsers(JSON.parse(localUsers));
+        console.log("Local Users Loaded");
+      }
+      
+    }
+    getUsers();
+
     const handleClickOutside = (event) => {
       if (profileRef.current && !profileRef.current.contains(event.target)) {
         setShowProfile(false);
       }
       if (userRef.current && !userRef.current.contains(event.target)) {
         setShowOnlineUsers(false);
+      }
+      if(menuRef.current && !menuRef.current.contains(event.target)){
+        setShowMenu(false)
       }
     };
 
@@ -74,7 +160,21 @@ function Home() {
 
   useEffect(() => {
     if (displayName && socket) {
-      socket.emit("join", { displayName, profilePicUrl });
+
+
+
+      setIsOnline((prevState) => {
+        const newState = localStorage.getItem("isOnline") || "online";
+
+        socket.emit("join", {
+          displayName,
+          profilePicUrl,
+          status: statusMessage,
+          isOnline: newState,
+        });
+
+        return newState; // Update state with the new value
+      });
 
       socket.on("onlineUsers", (users) => {
         setOnlineUsers(users);
@@ -174,8 +274,6 @@ function Home() {
 
     console.log(selectedUsers);
 
-    // socket.emit("createUser", { users: selectedUsers });
-
     setIsUserModalOpen(false);
     setSelectedUsers([]);
   };
@@ -195,7 +293,7 @@ function Home() {
           {showProfile && (
             <div
               ref={profileRef}
-              className="p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-gray-50 shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
+              className="hidden sm:block  p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-gray-50 shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
             >
               <div className="p-4 gap-2 justify-start flex flex-row items-center">
                 <img
@@ -230,7 +328,7 @@ function Home() {
                 </div>
                 <div className="mt-1 border-t border-gray-300">
                   <button
-                    className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center justify-center transition duration-300"
+                    className=" mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center justify-center transition duration-300"
                     onClick={handleSignOut}
                   >
                     <RxExit /> Sign Out
@@ -323,12 +421,84 @@ function Home() {
           {/* Sign Out Button */}
           <button
             onClick={handleSignOut}
-            className="bg-red-500 text-white cursor-pointer py-2 px-2 sm:px-4 rounded-lg font-semibold hover:bg-red-600 transition duration-300 text-xs sm:text-base"
+            className=" hidden sm:block bg-red-500 text-white cursor-pointer py-2 px-2 sm:px-4 rounded-lg font-semibold hover:bg-red-600 transition duration-300 text-xs sm:text-base"
           >
             Sign Out
           </button>
+          <button onClick={()=>setShowMenu(!showMenu)} className=" sm:hidden cursor-pointer text-2xl text-black font-bold">
+            <MdOutlineMoreVert/>
+          </button>
+         
         </div>
       </header>
+      {/* Menu With Options */}
+      { showMenu && (
+      <div ref={menuRef} className="p-3 z-50 shadow-2xl absolute right-3 top-13 mt-2 w-64 bg-gray-50 rounded-2xl overflow-hidden transform scale-95 transition-all duration-200">
+        <div className="border-gray-300 py-2">
+          {toggles.map((toggle, index) => (
+            <div 
+              key={index} 
+              className="flex justify-between items-center px-4 py-3 hover:bg-blue-50 transition"
+            >
+              <div className="flex items-center gap-3">
+                {toggle.icon}
+                <span className="text-sm text-gray-700">{toggle.label}</span>
+              </div>
+              <label className="inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={toggle.state}
+                  onChange={toggle.toggle}
+                  className="sr-only peer"
+                />
+                <div className="relative w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-gray-300 px-4 py-3">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <Globe size={18} />
+              <span className="text-sm text-gray-700">Online Status</span>
+            </div>
+            <label className="inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={isOnline=="online"?true:false}
+                onChange={(e) => handleOnline()}
+                className="sr-only peer"
+              />
+              <div className="relative w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-300">
+          <button 
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-blue-50 transition"
+          >
+            <div className="flex items-center gap-3">
+              {theme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
+              <span className="text-sm text-gray-700">
+                {theme === 'light' ? 'Light Mode' : 'Dark Mode'}
+              </span>
+            </div>
+          </button>
+
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center justify-between px-4 py-3 text-red-600 hover:bg-red-50 transition"
+          >
+            <div className="flex items-center gap-3">
+              <LogOut size={18} />
+              <span className="text-sm">Sign Out</span>
+            </div>
+          </button>
+        </div>
+      </div>)}
 
       <main
         style={{
@@ -336,14 +506,13 @@ function Home() {
         }}
         className=""
       >
-        
         <div className="flex flex-row ">
           <Sidebar
             onlineUsers={onlineUsers}
             groups={groups}
             handleJoinRoom={handleJoinRoom}
+            registeredUsers={registeredUsers}
           />
-          
 
           <div
             style={{
@@ -353,139 +522,138 @@ function Home() {
             }}
             className="sm:block hidden text-center flex justify-center items-center bg-white p-5 shadow-lg"
           >
-            
             <div className="mt-0 w-full">
               <div className="mt-30">
-              <h2 className="text-3xl font-bold text-gray-800 mb-4">
-                Welcome to the Chat App!
-              </h2>
-              <p className="xt-gray-600 text-lg max-w-md mx-auto">
-                Start connecting with friends by creating your first group.
-              </p>
-              <button
-                onClick={() => setIsGroupModalOpen(true)}
-                className="mt-4 mb-15 overflow-hidden relative w-38 p-2 h-12 bg-black text-white border-none rounded-md text-xl font-bold cursor-pointer  group"
-              >
-                Create Group
-                <span className="absolute w-36 h-32 -top-8 -left-2 bg-white rotate-12 transform scale-x-0 group-hover:scale-x-100 transition-transform group-hover:duration-500 duration-1000 origin-left" />
-                <span className="absolute w-36 h-32 -top-8 -left-2 bg-indigo-400 rotate-12 transform scale-x-0 group-hover:scale-x-100 transition-transform group-hover:duration-700 duration-700 origin-left" />
-                <span className="absolute w-36 h-32 -top-8 -left-2 bg-indigo-600 rotate-12 transform scale-x-0 group-hover:scale-x-50 transition-transform group-hover:duration-1000 duration-500 origin-left" />
-                <span className="ml-2 group-hover:opacity-100 group-hover:duration-1000 duration-100 opacity-0 absolute top-2.5 left-6 z-10">
-                  Connect!
-                </span>
-              </button>
-               {/* New Sections Container */}
-               <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto px-4 mb-8">
-                {/* Personal Status Section */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                    Your Status
-                  </h3>
-                  <div className="space-y-4">
-                    {/* Status Toggle */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Availability</span>
-                      <button
-                        onClick={() =>
-                          setStatus(status === "online" ? "offline" : "online")
-                        }
-                        className={`px-3 py-1 rounded-full flex items-center gap-2 cursor-pointer ${
-                          status === "online"
-                            ? "bg-green-100 text-green-600"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {status === "online" ? (
-                          <Sun size={16} />
-                        ) : (
-                          <Moon size={16} />
-                        )}
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </button>
+                <h2 className="text-3xl font-bold text-gray-800 mb-4">
+                  Welcome to the Chat App!
+                </h2>
+                <p className="xt-gray-600 text-lg max-w-md mx-auto">
+                  Start connecting with friends by creating your first group.
+                </p>
+                <button
+                  onClick={() => setIsGroupModalOpen(true)}
+                  className="mt-4 mb-15 overflow-hidden relative w-38 p-2 h-12 bg-black text-white border-none rounded-md text-xl font-bold cursor-pointer  group"
+                >
+                  Create Group
+                  <span className="absolute w-36 h-32 -top-8 -left-2 bg-white rotate-12 transform scale-x-0 group-hover:scale-x-100 transition-transform group-hover:duration-500 duration-1000 origin-left" />
+                  <span className="absolute w-36 h-32 -top-8 -left-2 bg-indigo-400 rotate-12 transform scale-x-0 group-hover:scale-x-100 transition-transform group-hover:duration-700 duration-700 origin-left" />
+                  <span className="absolute w-36 h-32 -top-8 -left-2 bg-indigo-600 rotate-12 transform scale-x-0 group-hover:scale-x-50 transition-transform group-hover:duration-1000 duration-500 origin-left" />
+                  <span className="ml-2 group-hover:opacity-100 group-hover:duration-1000 duration-100 opacity-0 absolute top-2.5 left-6 z-10">
+                    Connect!
+                  </span>
+                </button>
+                {/* New Sections Container */}
+                <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto px-4 mb-8">
+                  {/* Personal Status Section */}
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                      Your Status
+                    </h3>
+                    <div className="space-y-4">
+                      {/* Status Toggle */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Availability</span>
+                        <button
+                          onClick={() => handleOnline()}
+                          className={`px-3 py-1 rounded-full flex items-center gap-2 cursor-pointer ${
+                            isOnline === "online"
+                              ? "bg-green-100 text-green-600"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {isOnline === "online" ? (
+                            <Sun size={16} />
+                          ) : (
+                            <Moon size={16} />
+                          )}
+                          {isOnline.charAt(0).toUpperCase() + isOnline.slice(1)}
+                        </button>
+                      </div>
+                      {/* Status Message Input */}
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="What's on your mind?"
+                          value={statusMessage}
+                          onChange={(e) => setStatusMessage(e.target.value)}
+                          className="w-full p-2 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none"
+                        />
+                        <button
+                          onClick={handleStatusUpdate}
+                          className="cursor-pointer mr-3 absolute right-2 top-3 text-gray-400 hover:text-gray-600"
+                        >
+                          <Send size={20} />
+                        </button>
+                      </div>
                     </div>
-                    {/* Status Message Input */}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="What's on your mind?"
-                        value={statusMessage}
-                        onChange={(e) => setStatusMessage(e.target.value)}
-                        className="w-full p-2 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none"
-                      />
-                      <button className="absolute right-2 top-3 text-gray-400 hover:text-gray-600">
-                        <Smile size={20} />
+                  </div>
+                  {/* Quick Settings Access */}
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                      Quick Settings
+                    </h3>
+                    <div className="space-y-4">
+                      {/* Theme Toggle */}
+                      <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                            <Palette size={20} />
+                          </div>
+                          <span className="text-gray-700">Theme</span>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setTheme(theme === "light" ? "dark" : "light")
+                          }
+                          className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600"
+                        >
+                          {theme.charAt(0).toUpperCase() + theme.slice(1)}
+                        </button>
+                      </div>
+
+                      {/* Language Selection */}
+                      <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-50 rounded-lg text-green-600">
+                            <Globe size={20} />
+                          </div>
+                          <span className="text-gray-700">Language</span>
+                        </div>
+                        <select className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600 outline-none">
+                          <option>English</option>
+                          <option>Spanish</option>
+                          <option>French</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                      Quick Actions
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button className="flex items-center justify-center gap-2 p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-600 transition-colors">
+                        <Video size={20} />
+                        <span>Video Call</span>
+                      </button>
+                      <button className="flex items-center justify-center gap-2 p-3 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 transition-colors">
+                        <Phone size={20} />
+                        <span>Voice Call</span>
+                      </button>
+                      <button className="flex items-center justify-center gap-2 p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-600 transition-colors">
+                        <Mic size={20} />
+                        <span>Voice Note</span>
+                      </button>
+                      <button className="flex items-center justify-center gap-2 p-3 bg-purple-50 hover:bg-purple-100 rounded-lg text-purple-600 transition-colors">
+                        <SendHorizontal size={20} />
+                        <span>Quick Send</span>
                       </button>
                     </div>
                   </div>
                 </div>
-                {/* Quick Settings Access */}
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Settings</h3>
-          <div className="space-y-4">
-           
-
-            {/* Theme Toggle */}
-            <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
-                  <Palette size={20} />
-                </div>
-                <span className="text-gray-700">Theme</span>
               </div>
-              <button 
-                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600"
-              >
-                {theme.charAt(0).toUpperCase() + theme.slice(1)}
-              </button>
-            </div>
 
-            {/* Language Selection */}
-            <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-50 rounded-lg text-green-600">
-                  <Globe size={20} />
-                </div>
-                <span className="text-gray-700">Language</span>
-              </div>
-              <select className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600 outline-none">
-                <option>English</option>
-                <option>Spanish</option>
-                <option>French</option>
-              </select>
-            </div>
-
-          </div>
-        </div>
-                 
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <button className="flex items-center justify-center gap-2 p-3 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-600 transition-colors">
-              <Video size={20} />
-              <span>Video Call</span>
-            </button>
-            <button className="flex items-center justify-center gap-2 p-3 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 transition-colors">
-              <Phone size={20} />
-              <span>Voice Call</span>
-            </button>
-            <button className="flex items-center justify-center gap-2 p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-600 transition-colors">
-              <Mic size={20} />
-              <span>Voice Note</span>
-            </button>
-            <button className="flex items-center justify-center gap-2 p-3 bg-purple-50 hover:bg-purple-100 rounded-lg text-purple-600 transition-colors">
-              <SendHorizontal size={20} />
-              <span>Quick Send</span>
-            </button>
-          </div>
-        </div>
-        
-              </div>
-              
-
-              </div>
-              
-             
               {/* Quick Stats */}
               <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto mt-0 px-4">
                 {quickStats.map((stat, index) => (

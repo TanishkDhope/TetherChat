@@ -115,7 +115,7 @@ const SignUp = () => {
       backgroundPosition: "center", // Centers the background image
       backgroundSize: "cover", // Ensures the image covers the entire container
     }}
-    classNameName="
+    className="
     bg-gray-100"
   >
        <div className="bg-white rounded-xl p-8 xl:mx-auto xl:w-full shadow-md p-4 xl:max-w-sm 2xl:max-w-md">

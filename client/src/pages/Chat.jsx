@@ -85,22 +85,22 @@ const Chat = () => {
     const getMessg = async () => {
       const localMessages = localStorage.getItem(`messages_${roomId}`);
       if (!localMessages) {
-        console.log("DisplayName: ", displayName);
-        console.log("sender: ", senderRef.current);
         const myMessages = await getMessages(displayName, senderRef.current);
+        console.log("MyMessages: ",myMessages);
         setDbMessages(myMessages);
       }
-
       if (localMessages) {
         setMessages(JSON.parse(localMessages));
         console.log("Local Messages Loaded");
-      } else if (dbMessages) {
+      }
+      else if (dbMessages) 
+      {
         setMessages(dbMessages);
-        console.log("DB Messages Loaded");
+        console.log("DB Messages Loaded", dbMessages);
       }
     };
     getMessg();
-  }, [sender]);
+  }, [socket, dbMessages, displayName]);
 
   const messagesRef = useRef(messages); // Create a ref to hold messages
 
@@ -117,11 +117,13 @@ const Chat = () => {
     return () => {
       // Optionally, disconnect socket when the component unmounts (if needed)
       if (socket) {
+        socket.emit("leaveRoom", roomId, displayName)
+        
         if (messagesRef.current.length > 0) {
           const mssg = JSON.parse(localStorage.getItem(`messages_${roomId}`));
-          console.log("local messages: ", messagesRef.length);
-          console.log("db messages: ", dbMessages.length);
-          if (dbMessages.length !== messagesRef.length) {
+          
+          
+          if (dbMessages.length !== messagesRef.current.length) {
             storeMessages(displayName, senderRef.current, mssg);
             console.log("CHANGES NEEDED");
           } else {
@@ -136,7 +138,7 @@ const Chat = () => {
 
   useEffect(() => {
     if (displayName && socket) {
-      socket.emit("join", { displayName, profilePicUrl });
+      socket.emit("join", { displayName, profilePicUrl, isOnline: roomId });
       socket.emit("joinRoom", roomId, displayName);
       socket.emit("get-room-info", roomId);
     }
@@ -199,7 +201,7 @@ const Chat = () => {
   }, []);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -215,8 +217,12 @@ const Chat = () => {
       text: newMessage,
       sender: "user", // Make sure sender is "user"
       type: "text",
+      delivered: false,
       timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
+    if(sender.online){
+      message.delivered = true;
+    }
 
     socket.emit("send-message", message, roomId);
 
@@ -245,8 +251,8 @@ const Chat = () => {
   };
 
   return (
-    <div className="min-h-screen bg-whitefrom-blue-50 to-purple-50 flex justify-center items-center">
-      <div className="relative w-3xl max-w-4xl flex flex-col h-[90vh] mx-4 my-4 bg-white rounded-lg shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-whitefrom-blue-50 to-purple-50 flex justify-center sm:items-center">
+      <div className="relative w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
         {/* Chat Header */}
         <div className="bg-[#0A2239] p-4 flex items-center justify-between">
           <div className="flex items-center">
@@ -255,6 +261,7 @@ const Chat = () => {
             <div className="flex items-center">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-white">
                 {sender}
+                {sender.isOnline}
               </h1>
             </div>
           </div>

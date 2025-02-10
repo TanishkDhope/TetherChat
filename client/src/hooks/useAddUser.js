@@ -1,19 +1,21 @@
+import { Profiler } from "react";
 import { db } from "../Firebase/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 export const useAddUser = () => {
-  const userRef = collection(db, "users");
-
   const addUser = async ({ email, name, profilePicUrl }) => {
     try {
-      await addDoc(userRef, {
+      const userDocRef = doc(db, "users", email); // Use email as document ID
+
+      await setDoc(userDocRef, {
         email,
         displayName: name,
+        profilePicUrl: profilePicUrl || "https://i.pravatar.cc/120",
         timestamp: serverTimestamp(),
-        profilePicUrl,
-      });
+      }, { merge: true }); // Merge prevents overwriting existing data
+
     } catch (error) {
-        console.log(error)
+      console.error("Error adding user:", error);
     }
   };
 

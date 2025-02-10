@@ -30,18 +30,18 @@ io.on("connection", (socket) => {
 
   //USER LOGIC
 
-  socket.on("join", ({ displayName, profilePicUrl }) => {
+  socket.on("join", ({ displayName, profilePicUrl, status, isOnline }) => {
     if (onlineUsers.find((user) => user.name === displayName)) {
       console.log("User already exists:", displayName);
       onlineUsers = onlineUsers.map((user) =>
         user.name == displayName
-          ? { id: socket.id, name: displayName, profilePicUrl }
+          ? { id: socket.id, name: displayName, profilePicUrl, status, isOnline }
           : user
       );
       io.emit("onlineUsers", onlineUsers);
       return;
     }
-    onlineUsers.push({ id: socket.id, name: displayName, profilePicUrl });
+    onlineUsers.push({ id: socket.id, name: displayName, profilePicUrl, status, isOnline });
     console.log("User joined:", displayName);
     io.emit("onlineUsers", onlineUsers);
   });
@@ -100,12 +100,17 @@ io.on("connection", (socket) => {
     rooms = rooms.filter((room) => room.users.length > 0);
   });
 
-  socket.on("leaveRoom", (roomId, socketId) => {
-    rooms.find((room) => room.id === roomId).users = rooms.find((room) => room.id === roomId).users.filter(
-      (user) => user.id !== socketId
-    );
-    console.log(rooms)
-  })
+  socket.on("leaveRoom", (roomId, displayName) => {
+    rooms = rooms.map(room => {
+      if (room.id === roomId) {
+        return {
+          ...room,
+          users: room.users.filter(user => user.name !== displayName)
+        };
+      }
+    })
+    console.log(rooms.find(room => (room?.id) === roomId))
+  });
 
   socket.on("get-room-info", (roomId) => {
     socket.emit("room-info", rooms.find((room) => room.id === roomId));
