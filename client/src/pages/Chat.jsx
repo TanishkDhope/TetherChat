@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
-import { useParams, useLocation } from "react-router-dom";
-import { Send, Smile, Sticker } from "lucide-react";
+import { useParams, useLocation, useNavigate} from "react-router-dom";
+import { ArrowLeft, Send, Smile, Sticker } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
@@ -13,7 +13,6 @@ import { BiSolidVideo } from "react-icons/bi";
 import { PiStickerBold } from "react-icons/pi";
 import { BsEmojiGrin } from "react-icons/bs";
 import { RiSendPlaneFill } from "react-icons/ri";
-
 
 const STICKER_PACKS = {
   basic: [
@@ -76,38 +75,64 @@ const Chat = () => {
   const [inRoom, setInRoom] = useState([]);
   const { storeMessages, getMessages } = useFirestore();
   const [senderPic, setSenderPic] = useState(null);
+  const [senderObject, setSenderObject] = useState(null);
   const location = useLocation();
   const userData = location.state?.userData;
 
   const senderRef = useRef(sender);
+  const navigate=useNavigate()
 
-  useEffect(() => {
-    senderRef.current = sender; // Update ref when sender changes
 
-  const getMessg = async () => {
-    const localMessages = localStorage.getItem(`messages_${roomId}`);
-
-    if (localMessages) {
-      setMessages(JSON.parse(localMessages));
-      console.log("Local Messages Loaded");
-    } else {
-      try {
-        const myMessages = await getMessages(displayName, senderRef.current);
-        localStorage.setItem(`msgLen_${roomId}`, myMessages.length)
-        console.log("MyMessages: ", myMessages);
-
-        if (myMessages?.length) {
-          setMessages(myMessages); // Set messages directly
-          localStorage.setItem(`messages_${roomId}`, JSON.stringify(myMessages));
-        }
-      } catch (error) {
-        console.error("Error fetching messages:", error);
+  const handleViewMessages = () => {
+    const localMessages = JSON.parse(localStorage.getItem(`messages_${roomId}`));
+    let viewedUpdateCount = 0;
+    const updatedMessages = localMessages.map(message => {
+      // Check if the message is from someone else and is not already viewed
+      if (message.sender !== displayName && !message.viewed) {
+        viewedUpdateCount++; // Increment the count if viewed is being changed
+        return { ...message, viewed: true };
       }
-    }
+      return message;
+    });
+    console.log(viewedUpdateCount)
+    console.log("Updated Messages:", updatedMessages);
+    setMessages(updatedMessages);
   };
 
+  useEffect(() => {
+
+    const getMessg = async () => {
+      const localMessages = localStorage.getItem(`messages_${roomId}`);
+
+      if (localMessages) {
+        setMessages(JSON.parse(localMessages));
+        console.log("Local Messages Loaded");
+      } else {
+        try {
+          const myMessages = await getMessages(displayName, userData?.name);
+          localStorage.setItem(`msgLen_${roomId}`, myMessages.length);
+          console.log("MyMessages: ", myMessages);
+
+          if (myMessages?.length) {
+            setMessages(myMessages); // Set messages directly
+            localStorage.setItem(
+              `messages_${roomId}`,
+              JSON.stringify(myMessages)
+            );
+          }
+        } catch (error) {
+          console.error("Error fetching messages:", error);
+        }
+      }
+    };
     getMessg();
+
   }, [socket, displayName]);
+
+  useEffect(()=>{
+    senderRef.current=sender
+
+  },[sender, setSender])
 
   const messagesRef = useRef(messages); // Create a ref to hold messages
 
@@ -124,12 +149,16 @@ const Chat = () => {
     return () => {
       // Optionally, disconnect socket when the component unmounts (if needed)
       if (socket) {
-        socket.emit("leaveRoom", roomId, displayName)
-        const dbLen=JSON.parse(localStorage.getItem(`msgLen_${roomId}`))
+        socket.emit("leaveRoom", roomId, displayName);
+        socket.emit("update-room-info", roomId);
+        const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
             storeMessages(displayName, senderRef.current, messagesRef.current);
-            localStorage.setItem(`msgLen_${roomId}`, JSON.stringify(messagesRef.current.length));
+            localStorage.setItem(
+              `msgLen_${roomId}`,
+              JSON.stringify(messagesRef.current.length)
+            );
             console.log("CHANGES NEEDED");
           } else {
             console.log("NO CHANGES Needed");
@@ -146,12 +175,13 @@ const Chat = () => {
       socket.emit("join", { displayName, profilePicUrl, isOnline: roomId });
       socket.emit("joinRoom", roomId, displayName);
       socket.emit("get-room-info", roomId);
+      socket.emit("update-room-info", roomId)
+
     }
   }, [displayName, roomId, socket]);
 
   //SAVE AND LOAD MESSAGES
   useEffect(() => {
-
     if (messages.length > 0) {
       localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
     }
@@ -166,26 +196,35 @@ const Chat = () => {
       //ROOM INFO
       socket.on("room-info", (roomInfo) => {
         setInRoom(roomInfo.users);
-        console.log(roomInfo.users)
+        console.log(roomInfo.users);
+      });
+
+      socket.on("user-details", (user) => {
+        setSenderObject(user);
       });
 
       socket.on("recieve-message", (message) => {
         setMessages((prev) => {
           // Avoid duplicating messages
           const isDuplicate = prev.some((m) => m.id === message.id);
-          return isDuplicate
-            ? prev
-            : [...prev, { ...message, sender: "other" }];
+          return isDuplicate ? prev : [...prev, { ...message }];
         });
       });
     }
   }, [socket]);
 
   useEffect(() => {
+    if (sender) {
+      socket.emit("get-user-details", sender);
+    }
+  }, [sender]);
+
+  useEffect(() => {
     if (socket) {
       const matchingUser = inRoom.find((user) => user.id !== socket.id);
       if (matchingUser) {
         setSender(matchingUser.name);
+        // handleViewMessages();
         setSenderPic(matchingUser.profilePicUrl);
       }
     }
@@ -208,7 +247,7 @@ const Chat = () => {
   }, []);
 
   const scrollToBottom = () => {
-    // messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -222,13 +261,13 @@ const Chat = () => {
     const message = {
       id: Date.now(),
       text: newMessage,
-      sender: "user", // Make sure sender is "user"
+      sender: displayName, // Make sure sender is "user"
       type: "text",
-      delivered: false,
+      viewed: false,
       timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
-    if(sender?.online){
-      message.delivered = true;
+    if (inRoom.length===2) {
+      message.viewed = true;
     }
 
     socket.emit("send-message", message, roomId);
@@ -246,7 +285,8 @@ const Chat = () => {
     const message = {
       id: Date.now(),
       text: sticker,
-      sender: "user",
+      sender: displayName,
+      viewed: false,
       type: "sticker",
       timestamp: new Date(),
     };
@@ -258,18 +298,22 @@ const Chat = () => {
   };
 
   return (
-    <div className="min-h-screen bg-whitefrom-blue-50 to-purple-50 flex justify-center sm:items-center">
-      <div className="relative w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-whitefrom-blue-50 to-purple-50 sm:flex justify-center sm:items-center">
+      <div className="relative h-screen width-screen sm:w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
         {/* Chat Header */}
         <div className="bg-[#0A2239] p-4 flex items-center justify-between">
           <div className="flex items-center">
-            <img src={sender?senderPic:userData?.profilePicUrl} className="shadow-xs shadow-white w-12 h-12 rounded-full mr-2" />
-            <div className="absolute left-11 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
-            <div className="flex items-center">
+          <ArrowLeft className="text-xl mr-1 text-white cursor-pointer hover:text-gray-400 transition-colors" onClick={()=>navigate("/home")}/>
+            <img
+              src={sender ? senderPic : userData?.profilePicUrl}
+              className="shadow-xs shadow-white w-12 h-12 rounded-full mr-2"
+            />
+            {userData.isOnline==="online" && (<div className="absolute left-20 top-13 w-3 h-3 bg-green-400 rounded-full "></div>)}
+            <div className="flex flex-col items-start">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-white">
-                {sender?sender:userData?.name}
-                {/* {userData?.isOnline} */}
+                {sender ? sender : userData?.name}
               </h1>
+              <p className="ml-4 text-gray-300 font-semibold text-xs">{userData?.status || "Available"}</p>
             </div>
           </div>
           <div className="flex flex-row gap-8">
@@ -301,28 +345,59 @@ const Chat = () => {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${
-                  message.sender === "user" ? "justify-end" : "justify-start"
+                className={`flex w-full px-4 py-2 ${
+                  message.sender === displayName
+                    ? "justify-end"
+                    : "justify-start"
                 }`}
               >
                 <div
-                  className={`max-w-[70%] rounded-lg p-3 shadow-md ${
-                    message.sender === "user"
-                      ? "bg-[#598392] px-5 font-semibold text-white rounded-xl rounded-br-none"
-                      : "bg-[#132E32] px-5 font-semibold rounded-xl text-white rounded-bl-none"
-                  } ${
-                    message.type === "sticker"
-                      ? "text-4xl  sm:text-6xl bg-gray-0 p-3"
-                      : "text-sm sm:text-xl"
-                  }`}
+                  className={`
+      relative max-w-[70%] p-4 shadow-lg transition-all
+      ${
+        message.sender === displayName
+          ? "bg-[#598392] rounded-2xl rounded-br-none"
+          : "bg-[#132E32] rounded-2xl rounded-bl-none"
+      }
+      ${
+        message.type === "sticker"
+          ? "text-4xl sm:text-6xl p-3"
+          : "text-sm sm:text-base"
+      }
+      transform hover:scale-[1.02]
+    `}
                 >
-                  <p className="break-words">{message.text}</p>
-                  <span className="text-xs opacity-70 mt-1 block">
-                    {new Date(message.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
+                  <p className="text-white break-words leading-relaxed">{message.text}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[10px] text-white sm:text-xs opacity-75">
+                      {new Date(message.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    {message.sender === displayName && (
+                      <div className="flex gap-0.5">
+                        <svg
+                          className={`w-4 h-4 ${
+                            message.viewed ? "text-blue-400" : "text-gray-400"
+                          }`}
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                        </svg>
+                        <svg
+                          className={`w-4 h-4 -ml-2 ${
+                            message.viewed ? "text-blue-400" : "text-gray-400"
+                          }`}
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -385,7 +460,6 @@ const Chat = () => {
             onSubmit={handleSubmit}
             className="mt-3 bg-white p-3 flex items-center gap-2 rounded-lg shadow-sm focus-within:border-blue-500 transition-colors" // Added focus-within styling
           >
-            
             <input
               type="text"
               value={newMessage}

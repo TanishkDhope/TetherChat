@@ -115,6 +115,13 @@ io.on("connection", (socket) => {
     socket.emit("room-info", rooms.find((room) => room.id === roomId));
   });
 
+  socket.on("get-user-details", (name) => {
+    socket.emit("user-details", onlineUsers.find((user) => user.name === name));
+  });
+
+  socket.on("update-room-info", (roomId)=>{
+    socket.to(roomId).emit("room-info", rooms.find((room) => room.id === roomId));
+  })
   //MESSAGES LOGIC  
   socket.on("send-message", (message, roomId) => {
     socket.to(roomId).emit("recieve-message", message);

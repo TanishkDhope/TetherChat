@@ -28,6 +28,10 @@ import {
   Send,
   Bell,
   Lock,
+  Plus,
+  MessageSquareMore,
+  MessageSquarePlus,
+  Users2,
 } from "lucide-react";
 import { AiOutlineUser } from "react-icons/ai";
 import { RxExit } from "react-icons/rx";
@@ -221,9 +225,9 @@ function Home() {
   //REQUEST MODAL LOGIC
   const [isVisible, setIsVisible] = useState(false);
 
-  const handleAccept = () => {
+  const handleAccept = (userData) => {
     setIsVisible(false);
-    navigate(`/chat/${joinInfo.roomId}`, {state:{}});
+    navigate(`/chat/${joinInfo.roomId}`, {state:{userData}});
   };
 
   const handleDecline = () => {
@@ -391,7 +395,7 @@ function Home() {
 
             {/* Online Users Dropdown */}
             {showOnlineUsers && (
-              <div className="z-50 absolute right-0 top-full mt-2 w-64 bg-white shadow-lg rounded-lg border">
+              <div className="z-50 absolute right-0 top-full mt-2 w-64 bg-white shadow-lg rounded-lg p-3">
                 <h3 className="text-sm font-semibold text-gray-700 p-3 border-b">
                   Online Users ({onlineUsers.length})
                 </h3>
@@ -400,15 +404,24 @@ function Home() {
                     <div
                       key={user.id}
                       onClick={() => handleJoinRoom(user)}
-                      className="flex items-center p-3 hover:bg-gray-100 cursor-pointer transition duration-300"
+                      className="flex justify-between items-center p-3 hover:bg-gray-100 cursor-pointer transition duration-300"
                     >
+                      <div className="flex">
                       <img
                         src={user.profilePicUrl}
                         className="w-8 h-8 sm:w-10 sm:h-10 rounded-full mr-3"
                       />
+                      <div className="flex flex-col">
                       <span className="text-sm sm:text-base text-gray-700">
                         {user.name}
+                        
                       </span>
+                      <span className="text-xs sm:text-sm text-gray-400">
+                        {user.status || "Available"}</span>
+                        
+                      </div>
+                      </div>
+                      <MessageSquareMore className="text-gray-500 hover:text-gray-700 transition duration-300 ease-in-out" />
                     </div>
                   ))}
                 </div>
@@ -679,13 +692,20 @@ function Home() {
         </div>
       </main>
 
-      {/* Floating New Chat Button */}
-      <button
-        onClick={() => setIsUserModalOpen(true)}
-        className="fixed bottom-25 right-8 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition duration-300"
-      >
-        New Chat
-      </button>
+
+     <button
+    onClick={() => setIsUserModalOpen(true)}
+    className="fixed bottom-25 right-8 bg-blue-600 text-white p-4 rounded-full shadow-xl 
+    hover:bg-blue-700 hover:scale-110 active:scale-95
+    cursor-pointer
+    transition-all duration-300 ease-in-out 
+    flex items-center hover:gap-2 group"
+  >
+    <MessageSquarePlus className="w-6 h-6" />
+    <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out whitespace-nowrap">
+      New Chat
+    </span>
+  </button>
 
       {/*USER MODAL*/}
       {isUserModalOpen && (
@@ -754,14 +774,19 @@ function Home() {
         </div>
       )}
 
-      {/*Create Group Button*/}
-      <button
-        onClick={() => setIsGroupModalOpen(true)}
-        className="fixed bottom-8 right-8 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition duration-300"
-      >
-        + Create Group
-      </button>
-
+<button
+    onClick={() => setIsGroupModalOpen(true)}
+    className="fixed bottom-6 right-8 bg-blue-600 text-white p-3 rounded-full shadow-xl 
+    hover:bg-blue-700 hover:scale-110 active:scale-95 
+    transition-all duration-300 ease-in-out 
+    cursor-pointer
+    flex items-center justify-center hover:gap-2 group min-w-[55px] min-h-[55px]"
+  >
+    <Users className="w-7 h-7" />
+    <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out whitespace-nowrap">
+      Create Group
+    </span>
+  </button>
       {isGroupModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all">
@@ -856,7 +881,7 @@ function Home() {
 
           <div className="flex gap-2">
             <button
-              onClick={handleAccept}
+              onClick={()=>handleAccept({name:joinInfo.from})}
               className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
             >
               Accept

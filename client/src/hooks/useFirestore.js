@@ -2,40 +2,44 @@ import { serverTimestamp,getDoc,doc,collection, setDoc } from "firebase/firestor
 import { db } from "../Firebase/firebase";
 
 export const useFirestore = () => {
+
+  function generateId(user1, user2) {
+    return [user1, user2].sort().join("_");
+  }
+  
+
     const storeMessages=async(user, sender, messages)=>{
         try {
-            // Correct Firestore Path: messages -> user (doc) -> sender (collection)
-            const userDocRef = doc(db, "messages", user); // User as a document
-            const senderCollectionRef = collection(userDocRef, sender); // Sender as a collection
-            const messageDocRef = doc(senderCollectionRef, "latest"); // Single document for messages
-            
-            await setDoc(messageDocRef, { messages }, { merge: false });
+          const key = generateId(user, sender); // Generate consistent chat ID
       
-            console.log("Messages stored successfully!");
-          } catch (error) {
-            console.error("Error storing messages:", error);
-          }
+          // Reference a subcollection inside "messages"
+          const chatRef = doc(db, "chats", key); 
+      
+          await setDoc(chatRef, { messages }, { merge: false });
+      
+          console.log("Messages stored successfully!");
+      } catch (error) {
+          console.error("Error storing messages:", error);
+      }
     }
 
 
     const getMessages = async (user, sender) => {
       try {
-        const userDocRef = doc(db, "messages", user);
-        const senderCollectionRef = collection(userDocRef, sender); // Reference sender collection
+        const key = generateId(user, sender); // Generate consistent chat ID
+        const chatRef = doc(db, "chats", key); // Reference chat document
     
-        const latestDocRef = doc(senderCollectionRef, "latest"); // Reference "latest" document
+        const chatSnap = await getDoc(chatRef);
     
-        const docSnap = await getDoc(latestDocRef);
-    
-        if (docSnap.exists()) {
-          console.log("Fetched Messages:", docSnap.data().messages);
-          return docSnap.data().messages; // Return messages array
+        if (chatSnap.exists()) {
+          const data = chatSnap.data();
+          return data.messages || []; // Return messages array
         } else {
           console.log("No messages found.");
           return [];
         }
-      } catch (err) {
-        console.error("Error fetching messages:", err);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
         return [];
       }
 
