@@ -42,7 +42,7 @@ io.on("connection", (socket) => {
       return;
     }
     onlineUsers.push({ id: socket.id, name: displayName, profilePicUrl, status, isOnline });
-    console.log("User joined:", displayName);
+      ("User joined:", displayName);
     io.emit("onlineUsers", onlineUsers);
   });
 
@@ -72,7 +72,7 @@ io.on("connection", (socket) => {
     socket.join(roomId);
   
     // Find the room or create a new one if it doesn't exist
-    let room = rooms.find((room) => room.id === roomId);
+    let room = rooms.find((room) => room?.id === roomId);
     if (!room) {
       room = { id: roomId, users: [] };
       rooms.push(room);
@@ -102,14 +102,13 @@ io.on("connection", (socket) => {
 
   socket.on("leaveRoom", (roomId, displayName) => {
     rooms = rooms.map(room => {
-      if (room.id === roomId) {
+      if (room?.id === roomId) {
         return {
           ...room,
           users: room.users.filter(user => user.name !== displayName)
         };
       }
     })
-    console.log(rooms.find(room => (room?.id) === roomId))
   });
 
   socket.on("get-room-info", (roomId) => {

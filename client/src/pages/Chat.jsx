@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { Send, Smile, Sticker } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
@@ -72,35 +72,42 @@ const Chat = () => {
   const stickerRef = useRef(null);
   const { socket, setSocket } = useContext(socketContext);
   const { displayName, profilePicUrl } = useGetUserInfo();
-  const [sender, setSender] = useState(displayName);
+  const [sender, setSender] = useState(null);
   const [inRoom, setInRoom] = useState([]);
   const { storeMessages, getMessages } = useFirestore();
-  const [dbMessages, setDbMessages] = useState([]);
-  const [senderPic, setSenderPic] = useState(profilePicUrl);
+  const [senderPic, setSenderPic] = useState(null);
+  const location = useLocation();
+  const userData = location.state?.userData;
 
   const senderRef = useRef(sender);
 
   useEffect(() => {
     senderRef.current = sender; // Update ref when sender changes
-    const getMessg = async () => {
-      const localMessages = localStorage.getItem(`messages_${roomId}`);
-      if (!localMessages) {
+
+  const getMessg = async () => {
+    const localMessages = localStorage.getItem(`messages_${roomId}`);
+
+    if (localMessages) {
+      setMessages(JSON.parse(localMessages));
+      console.log("Local Messages Loaded");
+    } else {
+      try {
         const myMessages = await getMessages(displayName, senderRef.current);
-        console.log("MyMessages: ",myMessages);
-        setDbMessages(myMessages);
+        localStorage.setItem(`msgLen_${roomId}`, myMessages.length)
+        console.log("MyMessages: ", myMessages);
+
+        if (myMessages?.length) {
+          setMessages(myMessages); // Set messages directly
+          localStorage.setItem(`messages_${roomId}`, JSON.stringify(myMessages));
+        }
+      } catch (error) {
+        console.error("Error fetching messages:", error);
       }
-      if (localMessages) {
-        setMessages(JSON.parse(localMessages));
-        console.log("Local Messages Loaded");
-      }
-      else if (dbMessages) 
-      {
-        setMessages(dbMessages);
-        console.log("DB Messages Loaded", dbMessages);
-      }
-    };
+    }
+  };
+
     getMessg();
-  }, [socket, dbMessages, displayName]);
+  }, [socket, displayName]);
 
   const messagesRef = useRef(messages); // Create a ref to hold messages
 
@@ -118,13 +125,11 @@ const Chat = () => {
       // Optionally, disconnect socket when the component unmounts (if needed)
       if (socket) {
         socket.emit("leaveRoom", roomId, displayName)
-        
+        const dbLen=JSON.parse(localStorage.getItem(`msgLen_${roomId}`))
         if (messagesRef.current.length > 0) {
-          const mssg = JSON.parse(localStorage.getItem(`messages_${roomId}`));
-          
-          
-          if (dbMessages.length !== messagesRef.current.length) {
-            storeMessages(displayName, senderRef.current, mssg);
+          if (dbLen !== messagesRef.current.length) {
+            storeMessages(displayName, senderRef.current, messagesRef.current);
+            localStorage.setItem(`msgLen_${roomId}`, JSON.stringify(messagesRef.current.length));
             console.log("CHANGES NEEDED");
           } else {
             console.log("NO CHANGES Needed");
@@ -146,6 +151,7 @@ const Chat = () => {
 
   //SAVE AND LOAD MESSAGES
   useEffect(() => {
+
     if (messages.length > 0) {
       localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
     }
@@ -160,6 +166,7 @@ const Chat = () => {
       //ROOM INFO
       socket.on("room-info", (roomInfo) => {
         setInRoom(roomInfo.users);
+        console.log(roomInfo.users)
       });
 
       socket.on("recieve-message", (message) => {
@@ -220,7 +227,7 @@ const Chat = () => {
       delivered: false,
       timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
-    if(sender.online){
+    if(sender?.online){
       message.delivered = true;
     }
 
@@ -256,12 +263,12 @@ const Chat = () => {
         {/* Chat Header */}
         <div className="bg-[#0A2239] p-4 flex items-center justify-between">
           <div className="flex items-center">
-            <img src={senderPic} className="shadow-xs shadow-white w-12 h-12 rounded-full mr-2" />
+            <img src={sender?senderPic:userData?.profilePicUrl} className="shadow-xs shadow-white w-12 h-12 rounded-full mr-2" />
             <div className="absolute left-11 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
             <div className="flex items-center">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-white">
-                {sender}
-                {sender.isOnline}
+                {sender?sender:userData?.name}
+                {/* {userData?.isOnline} */}
               </h1>
             </div>
           </div>

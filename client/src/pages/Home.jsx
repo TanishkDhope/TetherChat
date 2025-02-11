@@ -46,7 +46,7 @@ function Home() {
   const { isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
   const [onlineUsers, setOnlineUsers] = useState([]);
   const { socket, setSocket } = useContext(socketContext);
-  setSocket(useMemo(() => io("http://localhost:5000"), []));
+  setSocket(useMemo(() => io("https://chatapp-dcac.onrender.com"), []));
   const [joinInfo, setJoinInfo] = useState({});
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -95,7 +95,6 @@ function Home() {
       status: statusMessage,
       isOnline,
     });
-    console.log(statusMessage);
 
     setStatusMessage("");
   };
@@ -121,7 +120,7 @@ function Home() {
     const getUsers = async () => {
       const localUsers = localStorage.getItem("registeredUsers");
       if (!localUsers) {
-        const registeredUsers = await getRegisteredUsers();
+        // const registeredUsers = await getRegisteredUsers();
         setRegisteredUsers(registeredUsers);
         localStorage.setItem("registeredUsers", JSON.stringify(registeredUsers));
         console.log("Registered Users Loaded");
@@ -183,7 +182,7 @@ function Home() {
       socket.on("requestJoin", ({ from, roomId }) => {
         setJoinInfo({ from, roomId });
         localStorage.setItem(from, roomId);
-        socket.emit("joinRoom", roomId);
+        // socket.emit("joinRoom", roomId);
         setIsVisible(true);
       });
 
@@ -201,10 +200,10 @@ function Home() {
     } else {
       roomId = nanoid();
     }
-    socket.emit("joinRoom", roomId);
     localStorage.setItem(user.name, roomId);
     setJoinInfo({ from: displayName, roomId });
-    navigate(`/chat/${roomId}`);
+    const userData=user
+    navigate(`/chat/${roomId}`, {state:{userData}});
     socket.emit("requestJoin", { from: displayName, to: user.id, roomId });
   };
 
@@ -224,7 +223,7 @@ function Home() {
 
   const handleAccept = () => {
     setIsVisible(false);
-    navigate(`/chat/${joinInfo.roomId}`);
+    navigate(`/chat/${joinInfo.roomId}`, {state:{}});
   };
 
   const handleDecline = () => {
@@ -272,7 +271,6 @@ function Home() {
       return;
     }
 
-    console.log(selectedUsers);
 
     setIsUserModalOpen(false);
     setSelectedUsers([]);
