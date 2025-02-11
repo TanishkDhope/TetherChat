@@ -79,7 +79,7 @@ io.on("connection", (socket) => {
     }
   
     // Check if the user is already in the room
-    const existingUser = room.users.find((user) => user.name === displayName);
+    const existingUser = room?.users.find((user) => user.name === displayName);
   
     if (existingUser) {
       // If the user exists, update their socket ID
@@ -112,7 +112,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("get-room-info", (roomId) => {
-    socket.emit("room-info", rooms.find((room) => room.id === roomId));
+    socket.emit("room-info", rooms.find((room) => room?.id === roomId));
   });
 
   socket.on("get-user-details", (name) => {
@@ -120,7 +120,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("update-room-info", (roomId)=>{
-    socket.to(roomId).emit("room-info", rooms.find((room) => room.id === roomId));
+    socket.to(roomId).emit("room-info", rooms.find((room) => room?.id === roomId));
   })
   //MESSAGES LOGIC  
   socket.on("send-message", (message, roomId) => {

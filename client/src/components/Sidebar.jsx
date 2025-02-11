@@ -6,7 +6,7 @@ export const Sidebar=({ displayName,onlineUsers, groups, handleJoinRoom, registe
   return (
     <div 
  
-    className={`h-[90vh] bg-white shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}>
+    className={`h-screen bg-white shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}>
       <div className="overflow-y-auto flex-1 p-3">
         {/* Online Users Section */}
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Online Users</h3>
