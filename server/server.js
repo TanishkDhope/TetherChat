@@ -97,7 +97,7 @@ io.on("connection", (socket) => {
     }
   
     // Remove empty rooms
-    rooms = rooms.filter((room) => room.users.length > 0);
+    rooms = rooms.filter((room) => room?.users.length > 0);
   });
 
   socket.on("leaveRoom", (roomId, displayName) => {
@@ -109,6 +109,8 @@ io.on("connection", (socket) => {
         };
       }
     })
+
+    
   });
 
   socket.on("get-room-info", (roomId) => {
@@ -118,6 +120,14 @@ io.on("connection", (socket) => {
   socket.on("get-user-details", (name) => {
     socket.emit("user-details", onlineUsers.find((user) => user.name === name));
   });
+
+  socket.on("get-user-notif", (name,message)=>{
+    socket.emit("user-notif", onlineUsers.find((user) => user.name === name), message);
+  });
+
+  socket.on("message-notif", (message, userId, username,roomId)=>{
+    socket.to(userId).emit("message-notif", message,username, roomId);
+  })
 
   socket.on("update-room-info", (roomId)=>{
     socket.to(roomId).emit("room-info", rooms.find((room) => room?.id === roomId));

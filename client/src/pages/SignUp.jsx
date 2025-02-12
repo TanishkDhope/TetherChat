@@ -51,9 +51,9 @@ const SignUp = () => {
         displayName: name,
         email: result.user.email,
         isAuth: true,
-        profilePicUrl,  // Save the Cloudinary URL
+        profilePicUrl: profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
       };
-
+      
       // 3. Add user to your Firebase Firestore
       addUser({ email, name, profilePicUrl });
 

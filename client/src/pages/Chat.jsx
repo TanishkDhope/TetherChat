@@ -110,7 +110,7 @@ const Chat = () => {
       } else {
         try {
           const myMessages = await getMessages(displayName, userData?.name);
-          localStorage.setItem(`msgLen_${roomId}`, myMessages.length);
+          localStorage.setItem(`msgLen_${roomId}`, myMessages?.length);
           console.log("MyMessages: ", myMessages);
 
           if (myMessages?.length) {
@@ -151,9 +151,14 @@ const Chat = () => {
       if (socket) {
         socket.emit("leaveRoom", roomId, displayName);
         socket.emit("update-room-info", roomId);
-        const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
+        const dbLen = localStorage.getItem(`msgLen_${roomId}`) ;
+        
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
+            if(senderRef.current==null)
+            {
+              senderRef.current=displayName
+            }
             storeMessages(displayName, senderRef.current, messagesRef.current);
             localStorage.setItem(
               `msgLen_${roomId}`,
@@ -201,13 +206,19 @@ const Chat = () => {
 
       socket.on("user-details", (user) => {
         setSenderObject(user);
+        
+      });
+
+      socket.on("user-notif", (user, message) => {
+        console.log(user)
+        socket.emit("message-notif", message, user.id, displayName, roomId);
       });
 
       socket.on("recieve-message", (message) => {
         setMessages((prev) => {
           // Avoid duplicating messages
-          const isDuplicate = prev.some((m) => m.id === message.id);
-          return isDuplicate ? prev : [...prev, { ...message }];
+        const isDuplicate = prev.some((m) => m.id === message.id);
+        return isDuplicate ? prev : [...prev, { ...message }];
         });
       });
     }
@@ -266,10 +277,20 @@ const Chat = () => {
       viewed: false,
       timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
+    console.log(userData?.name)
     if (inRoom.length===2) {
       message.viewed = true;
     }
-
+    else if(inRoom.length===1)
+    {
+      if(userData?.name==displayName){
+        message.viewed=true
+      }
+      else{
+        socket.emit("get-user-notif", userData?.name, message);
+      }
+    }
+    
     socket.emit("send-message", message, roomId);
 
     setMessages((prev) => [...prev, message]);

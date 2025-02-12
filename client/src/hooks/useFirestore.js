@@ -77,7 +77,7 @@ export const useFirestore = () => {
             registeredUsers: arrayUnion({
               email: user.email,
               displayName: user.name,
-              profilePicUrl: user.profilePicUrl || "https://i.pravatar.cc/120",
+              profilePicUrl: user.profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
               timestamp: new Date(),
             }),
           });
@@ -88,7 +88,7 @@ export const useFirestore = () => {
               {
                 email: user.email,
                 displayName: user.name,
-                profilePicUrl: user.profilePicUrl || "https://i.pravatar.cc/120",
+                profilePicUrl: user.profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
                 timestamp: new Date(),
               },
             ],

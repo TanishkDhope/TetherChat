@@ -10,7 +10,7 @@ export const useAddUser = () => {
       await setDoc(userDocRef, {
         email,
         displayName: name,
-        profilePicUrl: profilePicUrl || "https://i.pravatar.cc/120",
+        profilePicUrl: profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
         timestamp: serverTimestamp(),
       }, { merge: true }); // Merge prevents overwriting existing data
 
