@@ -1,4 +1,3 @@
-import { Profiler } from "react";
 import { db } from "../Firebase/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 

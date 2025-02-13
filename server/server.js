@@ -122,7 +122,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("get-user-notif", (name,message)=>{
-    socket.emit("user-notif", onlineUsers.find((user) => user.name === name), message);
+    socket.emit("user-notif", onlineUsers.find((user) => user.name === name) || "", message);
   });
 
   socket.on("message-notif", (message, userId, username,roomId)=>{

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
-import { useParams, useLocation, useNavigate} from "react-router-dom";
-import { ArrowLeft, Send, Smile, Sticker } from "lucide-react";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, CheckCheck, Send, Smile, Sticker } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
@@ -13,6 +13,7 @@ import { BiSolidVideo } from "react-icons/bi";
 import { PiStickerBold } from "react-icons/pi";
 import { BsEmojiGrin } from "react-icons/bs";
 import { RiSendPlaneFill } from "react-icons/ri";
+import styled from "styled-components";
 
 const STICKER_PACKS = {
   basic: [
@@ -61,6 +62,7 @@ const EMOJI_GROUPS = [
 ];
 
 const Chat = () => {
+  const [loading, setLoading] = useState(true);
   const { roomId } = useParams();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
@@ -80,13 +82,14 @@ const Chat = () => {
   const userData = location.state?.userData;
 
   const senderRef = useRef(sender);
-  const navigate=useNavigate()
-
+  const navigate = useNavigate();
 
   const handleViewMessages = () => {
-    const localMessages = JSON.parse(localStorage.getItem(`messages_${roomId}`));
+    const localMessages = JSON.parse(
+      localStorage.getItem(`messages_${roomId}`)
+    );
     let viewedUpdateCount = 0;
-    const updatedMessages = localMessages.map(message => {
+    const updatedMessages = localMessages.map((message) => {
       // Check if the message is from someone else and is not already viewed
       if (message.sender !== displayName && !message.viewed) {
         viewedUpdateCount++; // Increment the count if viewed is being changed
@@ -94,15 +97,17 @@ const Chat = () => {
       }
       return message;
     });
-    console.log(viewedUpdateCount)
+    console.log(viewedUpdateCount);
     console.log("Updated Messages:", updatedMessages);
     setMessages(updatedMessages);
   };
 
   useEffect(() => {
-
     const getMessg = async () => {
+      setLoading(true); // Start loading
+
       const localMessages = localStorage.getItem(`messages_${roomId}`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       if (localMessages) {
         setMessages(JSON.parse(localMessages));
@@ -114,7 +119,7 @@ const Chat = () => {
           console.log("MyMessages: ", myMessages);
 
           if (myMessages?.length) {
-            setMessages(myMessages); // Set messages directly
+            setMessages(myMessages);
             localStorage.setItem(
               `messages_${roomId}`,
               JSON.stringify(myMessages)
@@ -124,15 +129,16 @@ const Chat = () => {
           console.error("Error fetching messages:", error);
         }
       }
-    };
-    getMessg();
 
+      setLoading(false); // Stop loading
+    };
+
+    getMessg();
   }, [socket, displayName]);
 
-  useEffect(()=>{
-    senderRef.current=sender
-
-  },[sender, setSender])
+  useEffect(() => {
+    senderRef.current = sender;
+  }, [sender, setSender]);
 
   const messagesRef = useRef(messages); // Create a ref to hold messages
 
@@ -151,13 +157,12 @@ const Chat = () => {
       if (socket) {
         socket.emit("leaveRoom", roomId, displayName);
         socket.emit("update-room-info", roomId);
-        const dbLen = localStorage.getItem(`msgLen_${roomId}`) ;
-        
+        const dbLen = localStorage.getItem(`msgLen_${roomId}`);
+
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
-            if(senderRef.current==null)
-            {
-              senderRef.current=displayName
+            if (senderRef.current == null) {
+              senderRef.current = displayName;
             }
             storeMessages(displayName, senderRef.current, messagesRef.current);
             localStorage.setItem(
@@ -180,8 +185,7 @@ const Chat = () => {
       socket.emit("join", { displayName, profilePicUrl, isOnline: roomId });
       socket.emit("joinRoom", roomId, displayName);
       socket.emit("get-room-info", roomId);
-      socket.emit("update-room-info", roomId)
-
+      socket.emit("update-room-info", roomId);
     }
   }, [displayName, roomId, socket]);
 
@@ -206,19 +210,21 @@ const Chat = () => {
 
       socket.on("user-details", (user) => {
         setSenderObject(user);
-        
       });
 
       socket.on("user-notif", (user, message) => {
-        console.log(user)
+        if (!user) {
+          return;
+        }
+        console.log(user);
         socket.emit("message-notif", message, user.id, displayName, roomId);
       });
 
       socket.on("recieve-message", (message) => {
         setMessages((prev) => {
           // Avoid duplicating messages
-        const isDuplicate = prev.some((m) => m.id === message.id);
-        return isDuplicate ? prev : [...prev, { ...message }];
+          const isDuplicate = prev.some((m) => m.id === message.id);
+          return isDuplicate ? prev : [...prev, { ...message }];
         });
       });
     }
@@ -277,20 +283,17 @@ const Chat = () => {
       viewed: false,
       timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
     };
-    console.log(userData?.name)
-    if (inRoom.length===2) {
+    console.log(userData?.name);
+    if (inRoom.length === 2) {
       message.viewed = true;
-    }
-    else if(inRoom.length===1)
-    {
-      if(userData?.name==displayName){
-        message.viewed=true
-      }
-      else{
+    } else if (inRoom.length === 1) {
+      if (userData?.name == displayName) {
+        message.viewed = true;
+      } else {
         socket.emit("get-user-notif", userData?.name, message);
       }
     }
-    
+
     socket.emit("send-message", message, roomId);
 
     setMessages((prev) => [...prev, message]);
@@ -324,17 +327,25 @@ const Chat = () => {
         {/* Chat Header */}
         <div className="bg-[#0A2239] p-4 flex items-center justify-between">
           <div className="flex items-center">
-          <ArrowLeft className="text-xl mr-1 text-white cursor-pointer hover:text-gray-400 transition-colors" onClick={()=>navigate("/home")}/>
+            <ArrowLeft
+              className="text-xl mr-1 text-white cursor-pointer hover:text-gray-400 transition-colors"
+              onClick={() => navigate("/home")}
+            />
             <img
               src={sender ? senderPic : userData?.profilePicUrl}
-              className="shadow-xs shadow-white w-12 h-12 rounded-full mr-2"
+              className="shadow-xs  w-12 h-12 rounded-full mr-2"
             />
-            {userData.isOnline==="online" && (<div className="absolute left-20 top-13 w-3 h-3 bg-green-400 rounded-full "></div>)}
+            {userData.isOnline === "online" && (
+              <div className="absolute left-20 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
+            )}
             <div className="flex flex-col items-start">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-white">
                 {sender ? sender : userData?.name}
               </h1>
-              <p className="ml-4 text-gray-300 font-semibold text-xs">{userData?.status || "Available"}</p>
+
+              <p className="ml-4 text-gray-300 font-semibold text-xs">
+                {userData?.status || "Available"}
+              </p>
             </div>
           </div>
           <div className="flex flex-row gap-8">
@@ -361,19 +372,74 @@ const Chat = () => {
               backgroundPosition: "center", // Centers the background image
               backgroundSize: "cover", // Ensures the image covers the entire container
             }}
-            className="flex-1 p-6 bg-gray-100 overflow-y-auto space-y-4"
+            className="flex-1 p-1 bg-gray-100 overflow-y-auto space-y-4"
           >
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex w-full px-4 py-2 ${
-                  message.sender === displayName
-                    ? "justify-end"
-                    : "justify-start"
-                }`}
-              >
-                <div
-                  className={`
+            {loading ? (
+              <div className="p-5">
+                <StyledWrapper className="sm:block hidden mt-100 ">
+                  <div>
+                    <div className="jelly-triangle">
+                      <div className="jelly-triangle__dot" />
+                      <div className="jelly-triangle__traveler" />
+                    </div>
+                    <svg width={0} height={0} className="jelly-maker">
+                      <defs>
+                        <filter id="uib-jelly-triangle-ooze">
+                          <feGaussianBlur
+                            in="SourceGraphic"
+                            stdDeviation="7.3"
+                            result="blur"
+                          />
+                          <feColorMatrix
+                            in="blur"
+                            mode="matrix"
+                            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
+                            result="ooze"
+                          />
+                          <feBlend in="SourceGraphic" in2="ooze" />
+                        </filter>
+                      </defs>
+                    </svg>
+                  </div>
+                </StyledWrapper>
+
+                <div className="sm:hidden block mt-6 flex flex-col sm:space-y-6 space-y-4 w-full max-w-3xl">
+                  <div className="flex items-start space-x-3">
+                    <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-20 bg-gray-600 rounded animate-pulse" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-3/4 bg-gray-600 rounded animate-pulse" />
+                        <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3 justify-end">
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-20 bg-gray-600 rounded animate-pulse ml-auto" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-2/3 bg-gray-600 rounded animate-pulse ml-auto" />
+                        <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse ml-auto" />
+                      </div>
+                    </div>
+                    <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex w-full px-4 py-2 ${
+                      message.sender === displayName
+                        ? "justify-end"
+                        : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`
       relative max-w-[70%] p-4 shadow-lg transition-all
       ${
         message.sender === displayName
@@ -387,42 +453,34 @@ const Chat = () => {
       }
       transform hover:scale-[1.02]
     `}
-                >
-                  <p className="text-white break-words leading-relaxed">{message.text}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] text-white sm:text-xs opacity-75">
-                      {new Date(message.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                    {message.sender === displayName && (
-                      <div className="flex gap-0.5">
-                        <svg
-                          className={`w-4 h-4 ${
-                            message.viewed ? "text-blue-400" : "text-gray-400"
-                          }`}
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                        </svg>
-                        <svg
-                          className={`w-4 h-4 -ml-2 ${
-                            message.viewed ? "text-blue-400" : "text-gray-400"
-                          }`}
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                        </svg>
+                    >
+                      <p className="text-white font-semibold break-words leading-relaxed">
+                        {message.text}
+                      </p>
+                      <div className="flex items-center justify-end gap-2 ">
+                        <span className="text-[10px] text-white sm:text-xs opacity-75">
+                          {new Date(message.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        {message.sender === displayName && (
+                          <div className="flex gap-0.5">
+                            <CheckCheck className={`w-4 h-4 ${
+                                message.viewed
+                                  ? "text-blue-400"
+                                  : "text-gray-400"
+                              }`} />
+                            
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                ))}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
-            <div ref={messagesEndRef} />
+            )}
           </div>
         )}
 
@@ -515,7 +573,7 @@ const Chat = () => {
               <button
                 type="submit"
                 className="cursor-pointer bg-blue-500 text-white rounded-full p-2 hover:bg-blue-600 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed" // Added disabled styling
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() || loading}
               >
                 <RiSendPlaneFill className="mr-1 mt-1 w-6 h-6" />
               </button>
@@ -526,5 +584,92 @@ const Chat = () => {
     </div>
   );
 };
+const StyledWrapper = styled.div`
+  .jelly-triangle {
+    --uib-size: 2.8rem;
+    --uib-speed: 1.75s;
+    --uib-color: #183153;
+    position: relative;
+    height: var(--uib-size);
+    width: var(--uib-size);
+    filter: url("#uib-jelly-triangle-ooze");
+  }
+
+  .jelly-triangle__dot,
+  .jelly-triangle::before,
+  .jelly-triangle::after {
+    content: "";
+    position: absolute;
+    width: 33%;
+    height: 33%;
+    background: var(--uib-color);
+    border-radius: 100%;
+    box-shadow: 0 0 20px rgba(18, 31, 53, 0.3);
+  }
+
+  .jelly-triangle__dot {
+    top: 6%;
+    left: 30%;
+    animation: grow7132 var(--uib-speed) ease infinite;
+  }
+
+  .jelly-triangle::before {
+    bottom: 6%;
+    right: 0;
+    animation: grow7132 var(--uib-speed) ease calc(var(--uib-speed) * -0.666)
+      infinite;
+  }
+
+  .jelly-triangle::after {
+    bottom: 6%;
+    left: 0;
+    animation: grow7132 var(--uib-speed) ease calc(var(--uib-speed) * -0.333)
+      infinite;
+  }
+
+  .jelly-triangle__traveler {
+    position: absolute;
+    top: 6%;
+    left: 30%;
+    width: 33%;
+    height: 33%;
+    background: var(--uib-color);
+    border-radius: 100%;
+    animation: triangulate6214 var(--uib-speed) ease infinite;
+  }
+
+  .jelly-maker {
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+
+  @keyframes triangulate6214 {
+    0%,
+    100% {
+      transform: none;
+    }
+
+    33.333% {
+      transform: translate(120%, 175%);
+    }
+
+    66.666% {
+      transform: translate(-95%, 175%);
+    }
+  }
+
+  @keyframes grow7132 {
+    0%,
+    100% {
+      transform: scale(1.5);
+    }
+
+    20%,
+    70% {
+      transform: none;
+    }
+  }
+`;
 
 export default Chat;

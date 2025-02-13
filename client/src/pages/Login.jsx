@@ -29,7 +29,7 @@ const Login = () => {
     setLoading(true);
     setError(null);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const result = await signInWithEmailAndPassword(auth, email, password);
       console.log(result.user.email);
       const { displayName, profilePicUrl } = await getUsername(
@@ -42,6 +42,7 @@ const Login = () => {
         profilePicUrl,
         isAuth: true,
       };
+      addUser({ email, name: displayName, photoURL });
       localStorage.setItem("auth-info", JSON.stringify(authInfo));
       navigate("/home");
       // Redirect user or update UI based on login success
@@ -80,7 +81,6 @@ const Login = () => {
       const name = result.user.displayName;
       const photoURL = result.user.photoURL;
       addUser({ email, name, photoURL });
-      addRegisteredUser({email, name, photoURL})
   
       localStorage.setItem("auth-info", JSON.stringify(authInfo));
       navigate("/home");

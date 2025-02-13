@@ -1,4 +1,4 @@
-import { serverTimestamp,getDoc,doc,collection, setDoc } from "firebase/firestore";
+import { serverTimestamp,getDoc,getDocs,doc,collection, setDoc } from "firebase/firestore";
 import { db } from "../Firebase/firebase";
 
 export const useFirestore = () => {
@@ -9,18 +9,18 @@ export const useFirestore = () => {
   
 
     const storeMessages=async(user, sender, messages)=>{
-        try {
-          const key = generateId(user, sender); // Generate consistent chat ID
+      //   try {
+      //     const key = generateId(user, sender); // Generate consistent chat ID
       
-          // Reference a subcollection inside "messages"
-          const chatRef = doc(db, "chats", key); 
+      //     // Reference a subcollection inside "messages"
+      //     const chatRef = doc(db, "chats", key); 
       
-          await setDoc(chatRef, { messages }, { merge: false });
+      //     await setDoc(chatRef, { messages }, { merge: false });
       
-          console.log("Messages stored successfully!");
-      } catch (error) {
-          console.error("Error storing messages:", error);
-      }
+      //     console.log("Messages stored successfully!");
+      // } catch (error) {
+      //     console.error("Error storing messages:", error);
+      // }
     }
 
 
@@ -35,7 +35,7 @@ export const useFirestore = () => {
           const data = chatSnap.data();
           return data.messages || []; // Return messages array
         } else {
-          console.log("No messages found.");
+          console.log("No messages found. key: ", key);
           return [];
         }
       } catch (error) {
@@ -47,19 +47,13 @@ export const useFirestore = () => {
 
     const getRegisteredUsers = async () => {
       try {
-        const registeredUsersRef = doc(db, "registered", "users_list"); // Fetch from "users_list"
-        const registeredUsersDocSnap = await getDoc(registeredUsersRef);
+        const usersCollection = collection(db, "users"); // Reference to the "users" collection
+        const usersSnapshot = await getDocs(usersCollection); // Fetch all documents
+        const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); // Map to array
     
-        if (registeredUsersDocSnap.exists()) {
-          const registeredUsers = registeredUsersDocSnap.data().registeredUsers;
-          console.log("Registered Users:", registeredUsers);
-          return registeredUsers;
-        } else {
-          console.log("No registered users found.");
-          return [];
-        }
-      } catch (err) {
-        console.error("Error fetching registered users:", err);
+        return usersList;
+      } catch (error) {
+        console.error("Error fetching users:", error);
         return [];
       }
     };

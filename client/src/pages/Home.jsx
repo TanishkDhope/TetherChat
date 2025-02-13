@@ -45,6 +45,7 @@ import { useFirestore } from "../hooks/useFirestore";
 import { use } from "react";
 
 function Home() {
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const { isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
@@ -73,9 +74,14 @@ function Home() {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem("theme");
     return savedTheme ? JSON.parse(savedTheme) : false;
-  });
-
+  }); 
   const { getRegisteredUsers } = useFirestore();
+
+  const [users, setUsers]=useState(()=>{
+    const savedUsers=localStorage.getItem("registeredUsers")
+    return savedUsers?JSON.parse(savedUsers):[]
+  })
+
   const quickStats = [
     { icon: <Users />, label: "Online Friends", value: "12" },
     { icon: <MessageSquare />, label: "Active Chats", value: "5" },
@@ -189,54 +195,68 @@ function Home() {
 
   useEffect(() => {
     if (displayName && socket) {
+      setIsLoading(true);
+  
+      const fetchUsers = async () => {
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const newUsers = await getRegisteredUsers();
+          setUsers(newUsers);
+          console.log("DB users loaded", newUsers);
+          localStorage.setItem("registeredUsers", JSON.stringify(newUsers));
+        } catch (error) {
+          console.error("Error fetching users:", error);
+        } finally {
+          setIsLoading(false); // Ensure loading is false after fetching
+        }
+      };
+  
       setIsOnline((prevState) => {
         const newState = localStorage.getItem("isOnline") || "online";
-
+  
         socket.emit("join", {
           displayName,
           profilePicUrl,
           status: statusMessage,
           isOnline: newState,
         });
-
-        return newState; // Update state with the new value
+  
+        return newState;
       });
-
+  
       socket.on("onlineUsers", (users) => {
         setOnlineUsers(users);
       });
-
+  
       socket.on("message-notif", (message, username, roomId) => {
-        let roomMessages = JSON.parse(
-          localStorage.getItem(`messages_${roomId}`)
-        );
-        if (!roomMessages) {
-          roomMessages = [];
-        }
+        let roomMessages = JSON.parse(localStorage.getItem(`messages_${roomId}`)) || [];
         roomMessages.push(message);
-        localStorage.setItem(
-          `messages_${roomId}`,
-          JSON.stringify(roomMessages)
-        );
-
+        localStorage.setItem(`messages_${roomId}`, JSON.stringify(roomMessages));
+  
         setNotifications((prevNotifications) => ({
           ...prevNotifications,
           [username]: (prevNotifications[username] || 0) + 1,
         }));
       });
-
+  
       socket.on("requestJoin", ({ from, roomId }) => {
         setJoinInfo({ from, roomId });
         localStorage.setItem(from, roomId);
-        // socket.emit("joinRoom", roomId);
         setIsVisible(true);
       });
-
+  
       socket.on("groupCreated", (group) => {
         setGroups((prev) => [...prev, group]);
       });
+  
+      if (users.length === 0) {
+        fetchUsers(); // Call fetchUsers only if users are empty
+      } else {
+        setIsLoading(false); // If users exist, stop loading
+      }
     }
   }, [displayName, socket]);
+  
 
   const handleJoinRoom = (user) => {
     const ExistRoom = GetRoomInfo(user.name);
@@ -335,7 +355,7 @@ function Home() {
               "https://t3.ftcdn.net/jpg/08/44/84/46/240_F_844844652_Z3SF4M5HIZsSMkGLt5ts0cr1s5O4mdQL.jpg"
             }
             alt="Profile"
-            className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 border-gray-200 shadow-md"
+            className="cursor-pointer w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-md"
             onClick={() => setShowProfile(!showProfile)} // Toggle profile dropdown
           />
          {showProfile && (
@@ -395,9 +415,12 @@ function Home() {
 )}
 
           {/* Display Name */}
-          <h1 className="dark:text-white text-md sm:text-3xl font-bold text-black ">
+          <div>
+          <h1 className="dark:text-white text-lg sm:text-3xl font-bold text-black ">
             {displayName}
           </h1>
+          <p className="sm:text-md sm:text-semibold text-gray-500 text-sm">Available</p>
+          </div>
         </div>
 
         {/* Online Users and Sign Out Button */}
@@ -445,7 +468,7 @@ function Home() {
             >
               <Users className="dark:text-white text-black w-5 h-5 sm:w-6 sm:h-6" />
               {onlineUsers.length > 0 && (
-                <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full px-1 py-0">
+                <span className="font-bold absolute top-0 right-0 bg-red-500 dark:bg-[#A5C5E9] dark:text-gray-900 text-white text-xs rounded-full px-1 py-0">
                   {onlineUsers.length}
                 </span>
               )}
@@ -659,6 +682,8 @@ function Home() {
       >
         <div className="flex flex-row">
           <Sidebar
+            isLoading={isLoading}
+            users={users}
             notif={notif}
             notifications={notifications}
             displayName={displayName}
@@ -1120,7 +1145,7 @@ function Home() {
         </div>
       )}
       <div
-        className={`fixed bottom-4 right-0 transform transition-all duration-500 ease-in-out ${
+        className={`hidden sm:block fixed bottom-4 right-0 transform transition-all duration-500 ease-in-out ${
           isVisible ? "translate-x-0" : "translate-x-full"
         }`}
       >
