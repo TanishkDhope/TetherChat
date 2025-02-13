@@ -96,11 +96,12 @@ io.on("connection", (socket) => {
       }
     }
   
-    // Remove empty rooms
-    rooms = rooms.filter((room) => room?.users.length > 0);
+  
   });
 
   socket.on("leaveRoom", (roomId, displayName) => {
+    socket.leave(roomId);
+    
     rooms = rooms.map(room => {
       if (room?.id === roomId) {
         return {
@@ -109,6 +110,8 @@ io.on("connection", (socket) => {
         };
       }
     })
+      // Remove empty rooms
+      rooms = rooms.filter((room) => room?.users.length > 0);
 
     
   });
