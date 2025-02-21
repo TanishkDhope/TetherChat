@@ -329,6 +329,16 @@ if (message.trim() === "") {
   }, [inRoom, socket]);
 
   useEffect(() => {
+    // Disable vertical scrolling
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      // Re-enable scrolling when leaving the page
+      document.body.style.overflow = "auto";
+    };
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (emojiRef.current && !emojiRef.current.contains(event.target)) {
         setShowEmojis(false);

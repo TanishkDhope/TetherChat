@@ -7,7 +7,7 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
 
   return (
     <div 
-  className={`h-100dvdh bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
+  className={`h-[100dvh] bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
 >
   <div className="overflow-y-auto flex-1 p-3">
 <div
