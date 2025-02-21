@@ -132,7 +132,7 @@ function Home() {
   };
 
   useEffect(() => {
-    setSocket(io("http://localhost:5000"));
+    setSocket(io("https://chatapp-dcac.onrender.com"));
   }, []);
 
   useEffect(() => {
