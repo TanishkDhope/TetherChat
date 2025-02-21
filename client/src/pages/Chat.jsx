@@ -116,6 +116,7 @@ const Chat = () => {
   const location = useLocation();
   const userData = location.state?.userData;
   const { isDarkMode } = useContext(ThemeContext);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   const senderRef = useRef(sender);
   const navigate = useNavigate();
@@ -123,7 +124,7 @@ const Chat = () => {
   const [selectedBackground, setSelectedBackground] = useState("Classic");
   const [typing, setTyping] = useState(false);
   const [IsSenderTyping, setIsSenderTyping] = useState(false);
-const typingTimeout = useRef(null);
+  const messagesContainerRef = useRef(null);
 
 
 const handleTyping = (e) => {
@@ -142,6 +143,24 @@ if (message.trim() === "") {
   }, 500);
 }
 };
+
+  // IntersectionObserver for scroll detection
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    const endRef = messagesEndRef.current;
+    if (!container || !endRef) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowScrollButton(!entry.isIntersecting); // Show button if not at bottom
+      },
+      { root: container, threshold: 0.8 } // Reduced threshold for better mobile accuracy
+    );
+
+    observer.observe(endRef);
+
+    return () => observer.disconnect();
+  }, [messages]);
 
   const handleViewMessages = () => {
     const localMessages = JSON.parse(
@@ -355,7 +374,9 @@ if (message.trim() === "") {
   }, []);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   };
 
   useEffect(() => {
@@ -507,7 +528,7 @@ if (message.trim() === "") {
         {sender !== "User" && (
           <div
             style={{
-              backgroundImage: `url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)`,
+              backgroundImage: `url(https://i.pinimg.com/736x/55/f2/e5/55f2e5c4595e7a5f1c16b30a044b03df.jpg)`,
               backgroundPosition: "center", // Centers the background image
               backgroundSize: "cover", // Ensures the image covers the entire container\
               height: "calc(100dvh - 140px)",
@@ -569,7 +590,14 @@ if (message.trim() === "") {
               // </div>
               <ChatSkeleton></ChatSkeleton>
             ) : (
-              <div>
+              <div 
+              style={{
+              height: "calc(100dvh - 140px)"
+
+              }}
+              ref={messagesContainerRef}
+              
+  className="overflow-y-auto flex-1 p-1 overflow-y-auto space-y-4 w-full scroll-smooth">
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -643,12 +671,35 @@ if (message.trim() === "") {
                 ) : (
                   <></>
                 )}
-                <div ref={messagesEndRef} />
+                <div ref={messagesEndRef} className="h-10 w-full" />
               </div>
+              
             )}
+         
           </div>
         )}
-
+        {showScrollButton && (
+  <button
+    onClick={scrollToBottom}
+    className="fixed bottom-20 left-8 bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full shadow-lg 
+    transform hover:scale-110 active:scale-95 transition-all duration-200 flex items-center justify-center"
+    aria-label="Scroll to bottom"
+  >
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      className="h-6 w-6"
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2.5"
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <polyline points="19 12 12 19 5 12" />
+    </svg>
+  </button>
+)}
         {/* Input Form */}
         <div className="relative">
           {/* Emoji Picker */}
