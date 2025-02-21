@@ -146,8 +146,12 @@ io.on("connection", (socket) => {
     io.emit("onlineUsers", onlineUsers);
   });
 
-});
 
+  socket.on("typing", (state , roomId)=>{
+    socket.to(roomId).emit("IsSenderTyping", state);
+  })
+
+});
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });

@@ -42,7 +42,7 @@ import styled from "styled-components";
 import { Sidebar } from "../components/Sidebar";
 import { MdOutlineMoreVert } from "react-icons/md";
 import { useFirestore } from "../hooks/useFirestore";
-import { use } from "react";
+import  ThemeContext  from "../contexts/ThemeContext";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -51,7 +51,7 @@ function Home() {
   const { isAuth, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
   const [onlineUsers, setOnlineUsers] = useState([]);
   const { socket, setSocket } = useContext(socketContext);
-  setSocket(useMemo(() => io("https://chatapp-dcac.onrender.com"), []));
+  // setSocket(useMemo(() => io("http://localhost:5000"), []));
   const [joinInfo, setJoinInfo] = useState({});
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -71,10 +71,7 @@ function Home() {
     const savedNotifications = localStorage.getItem("notifications");
     return savedNotifications ? JSON.parse(savedNotifications) : {};
   });
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem("theme");
-    return savedTheme ? JSON.parse(savedTheme) : false;
-  }); 
+  const {isDarkMode, setIsDarkMode}=useContext(ThemeContext)
   const { getRegisteredUsers } = useFirestore();
 
   const [users, setUsers]=useState(()=>{
@@ -133,6 +130,10 @@ function Home() {
       return newStatus; // Update state with the new value
     });
   };
+
+  useEffect(() => {
+    setSocket(io("http://localhost:5000"));
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("notifications", JSON.stringify(notifications));
@@ -344,12 +345,12 @@ function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div className="min-h-100dvdh flex flex-col bg-gray-100">
       {/* Header with Display Name and Icon */}
       <header className="dark:bg-[rgb(21,21,21)] shadow-3xl  bg- p-4 flex justify-between items-center">
         {/* Profile Section */}
         <div className=" relative flex items-center space-x-4 header-item">
-          <img
+          {/* <img
             src={
               profilePicUrl ||
               "https://t3.ftcdn.net/jpg/08/44/84/46/240_F_844844652_Z3SF4M5HIZsSMkGLt5ts0cr1s5O4mdQL.jpg"
@@ -357,7 +358,7 @@ function Home() {
             alt="Profile"
             className="cursor-pointer w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-md"
             onClick={() => setShowProfile(!showProfile)} // Toggle profile dropdown
-          />
+          /> */}
          {showProfile && (
   <div
     ref={profileRef}
@@ -416,10 +417,10 @@ function Home() {
 
           {/* Display Name */}
           <div>
-          <h1 className="dark:text-white text-lg sm:text-3xl font-bold text-black ">
-            {displayName}
+          <h1 className="dark:text-white text-3xl sm:text-4xl font-bold text-black ">
+            TetherChat
           </h1>
-          <p className="sm:text-md sm:text-semibold text-gray-500 text-sm">Available</p>
+          
           </div>
         </div>
 

@@ -16,7 +16,7 @@ const Login = () => {
   const navigate = useNavigate();
   const {addUser}=useAddUser()
   const [loading, setLoading] = useState(false);
-  const {getRegisteredUsers, addRegisteredUser}=useFirestore()
+ 
 
   useEffect(() => {
     if (isAuth) {
@@ -80,6 +80,7 @@ const Login = () => {
       const email = result.user.email;
       const name = result.user.displayName;
       const photoURL = result.user.photoURL;
+      console.log(email)
       addUser({ email, name, photoURL });
   
       localStorage.setItem("auth-info", JSON.stringify(authInfo));

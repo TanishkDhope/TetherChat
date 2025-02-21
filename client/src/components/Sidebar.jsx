@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle } from 'lucide-react'
+// import { Toaster, toaster } from "@/components/ui/toaster"
+
 
 export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUsers, groups, handleJoinRoom, registeredUsers })=> {
 
   return (
     <div 
-  className={`h-screen bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
+  className={`h-100dvdh bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
 >
   <div className="overflow-y-auto flex-1 p-3">
 <div
-  class="mt-5 mb-5 dark:bg-gray-900 sm:hidden flex items-center border w-full dark:focus-within:border-gray-500 focus-within:border-indigo-500 transition duration-300 pr-3 gap-2 bg-white border-gray-500/30 h-[46px] rounded-[10px] overflow-hidden"
+  className="mt-5 mb-5 dark:bg-gray-900 sm:hidden flex items-center border w-full dark:focus-within:border-gray-500 focus-within:border-indigo-500 transition duration-300 pr-3 gap-2 bg-white border-gray-500/30 h-[46px] rounded-[10px] overflow-hidden"
 >
   <input
     type="text"
     placeholder="Search for People"
-    class="w-full dark:text-white h-full pl-4 outline-none placeholder-gray-500 text-sm"
+    className="w-full dark:text-white h-full pl-4 outline-none placeholder-gray-500 text-sm"
   />
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -34,30 +36,37 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
 
     {/* Online Users Section */}
     <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-      Online Users
+      Online Users 
     </h3>
     <div className="space-y-3">
       {onlineUsers.length===0?(
         <>
-        <div class="dark:hidden flex flex-row gap-2">
-  <div class="animate-pulse bg-gray-300 w-14 h-14 rounded-lg"></div>
-  <div class="flex flex-col gap-2">
-    <div class="animate-pulse bg-gray-300 w-28 h-5 rounded-lg"></div>
-    <div class="animate-pulse bg-gray-300 w-36 h-3 rounded-lg"></div>
-    <div class="animate-pulse bg-gray-300 w-36 h-2 rounded-lg"></div>
+        <div className="dark:hidden flex flex-row gap-2">
+  <div className="animate-pulse bg-gray-300 w-14 h-14 rounded-lg"></div>
+  <div className="flex flex-col gap-2">
+    <div className="animate-pulse bg-gray-300 w-28 h-5 rounded-lg"></div>
+    <div className="animate-pulse bg-gray-300 w-36 h-3 rounded-lg"></div>
+    <div className="animate-pulse bg-gray-300 w-36 h-2 rounded-lg"></div>
   </div>
 </div>
-       <div class="hidden dark:flex items-center space-x-2">
-  <div class="animate-pulse rounded-full bg-gray-500 h-12 w-12 rounded-full"></div>
-  <div class="space-y-2">
-    <div class="animate-pulse rounded-md bg-gray-500 h-4 w-[200px]"> </div>
-    <div class="animate-pulse rounded-md bg-gray-500 h-4 w-[170px]"> </div>
+       <div className="hidden dark:flex items-center space-x-2">
+  <div className="animate-pulse rounded-full bg-gray-500 h-12 w-12 rounded-full"></div>
+  <div className="space-y-2">
+    <div className="animate-pulse rounded-md bg-gray-500 h-4 w-[200px]"> </div>
+    <div className="animate-pulse rounded-md bg-gray-500 h-4 w-[170px]"> </div>
   </div>
 </div>
       </>
         ):(
         <>
-         {onlineUsers.map((user) => (
+         {onlineUsers.sort((a, b) => {
+    // Put current user first
+    if (a.name === displayName) return -1;
+    if (b.name === displayName) return 1;
+    
+    // Sort other users alphabetically
+    return a.name.localeCompare(b.name);
+  }).map((user) => (
         <div
           key={user.id}
           onClick={() => handleJoinRoom(user)}
@@ -82,7 +91,7 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
             </div>
             <div className="flex flex-col">
               <span className="text-gray-900 dark:text-gray-100 font-medium">
-                {user.name}
+                {user.name==displayName?"You": user.name}
               </span>
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {user.status || "Available"}
@@ -120,12 +129,12 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
         </div>
       ))}
       {isLoading?(<>
-<div class="flex flex-row gap-2">
-  <div class="animate-pulse bg-gray-300 w-14 h-14 rounded-lg"></div>
-  <div class="flex flex-col gap-2">
-    <div class="animate-pulse bg-gray-300 w-28 h-5 rounded-lg"></div>
-    <div class="animate-pulse bg-gray-300 w-36 h-3 rounded-lg"></div>
-    <div class="animate-pulse bg-gray-300 w-36 h-2 rounded-lg"></div>
+<div className="flex flex-row gap-2">
+  <div className="animate-pulse bg-gray-300 w-14 h-14 rounded-lg"></div>
+  <div className="flex flex-col gap-2">
+    <div className="animate-pulse bg-gray-300 w-28 h-5 rounded-lg"></div>
+    <div className="animate-pulse bg-gray-300 w-36 h-3 rounded-lg"></div>
+    <div className="animate-pulse bg-gray-300 w-36 h-2 rounded-lg"></div>
   </div>
 </div>
 </>):(

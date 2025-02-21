@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+html {
+    @apply scroll-smooth;
+  }
 #root{
     min-height: 100vh;
     
 }
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Hide scrollbar for Firefox */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+ 
+  

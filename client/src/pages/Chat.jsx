@@ -14,6 +14,42 @@ import { PiStickerBold } from "react-icons/pi";
 import { BsEmojiGrin } from "react-icons/bs";
 import { RiSendPlaneFill } from "react-icons/ri";
 import styled from "styled-components";
+import { ChatSkeleton } from "../components/ChatSkeleton";
+import ThemeContext from "../contexts/ThemeContext";
+
+const backgrounds = [
+  {
+    name: "Classic",
+    lightPreview:
+      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
+    darkPreview:
+      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
+    lightClass:
+      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
+    darkClass: "dark:bg-gray-900",
+  },
+  {
+    name: "Ocean",
+    lightPreview: "linear-gradient(to right, #e0f2fe, #bae6fd)",
+    darkPreview: "linear-gradient(to right, #0c4a6e, #082f49)",
+    lightClass: "bg-sky-50",
+    darkClass: "dark:bg-sky-950",
+  },
+  {
+    name: "Forest",
+    lightPreview: "linear-gradient(to right, #dcfce7, #bbf7d0)",
+    darkPreview: "linear-gradient(to right, #14532d, #052e16)",
+    lightClass: "bg-green-50",
+    darkClass: "dark:bg-green-950",
+  },
+  {
+    name: "Sunset",
+    lightPreview: "linear-gradient(to right, #fff7ed, #ffedd5)",
+    darkPreview: "linear-gradient(to right, #7c2d12, #431407)",
+    lightClass: "bg-orange-50",
+    darkClass: "dark:bg-orange-950",
+  },
+];
 
 const STICKER_PACKS = {
   basic: [
@@ -60,7 +96,6 @@ const EMOJI_GROUPS = [
   ["🤔", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄"],
   ["😳", "😱", "😨", "😰", "😢", "😥", "😭", "😫"],
 ];
-
 const Chat = () => {
   const [loading, setLoading] = useState(true);
   const { roomId } = useParams();
@@ -80,9 +115,33 @@ const Chat = () => {
   const [senderObject, setSenderObject] = useState(null);
   const location = useLocation();
   const userData = location.state?.userData;
+  const { isDarkMode } = useContext(ThemeContext);
 
   const senderRef = useRef(sender);
   const navigate = useNavigate();
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedBackground, setSelectedBackground] = useState("Classic");
+  const [typing, setTyping] = useState(false);
+  const [IsSenderTyping, setIsSenderTyping] = useState(false);
+const typingTimeout = useRef(null);
+
+
+const handleTyping = (e) => {
+  const message = e.target.value;
+
+if (!typing) {
+  setTyping(true);
+  socket.emit("typing", true, roomId);
+}
+
+// Clear previous timeout to avoid multiple delayed executions
+if (message.trim() === "") {
+  setTimeout(() => {
+    setTyping(false);
+    socket.emit("typing", false, roomId);
+  }, 500);
+}
+};
 
   const handleViewMessages = () => {
     const localMessages = JSON.parse(
@@ -137,6 +196,15 @@ const Chat = () => {
   }, [socket, displayName]);
 
   useEffect(() => {
+    const htmlElement = document.documentElement;
+    if (isDarkMode) {
+      htmlElement.classList.add("dark");
+    } else {
+      htmlElement.classList.remove("dark");
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
     senderRef.current = sender;
   }, [sender, setSender]);
 
@@ -149,7 +217,7 @@ const Chat = () => {
   useEffect(() => {
     // Check if the socket already exists, and if not, establish a new connection
     if (!socket) {
-      const newSocket = io("https://chatapp-dcac.onrender.com");
+      const newSocket = io("http://localhost:5000");
       setSocket(newSocket);
     }
     return () => {
@@ -157,8 +225,9 @@ const Chat = () => {
       if (socket) {
         socket.emit("leaveRoom", roomId, displayName);
         socket.emit("update-room-info", roomId);
-        const dbLen = localStorage.getItem(`msgLen_${roomId}`);
-
+        socket.emit("get-room-info", roomId);
+        const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
+        
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
             if (senderRef.current == null) {
@@ -182,12 +251,16 @@ const Chat = () => {
 
   useEffect(() => {
     if (displayName && socket) {
-      socket.emit("join", { displayName, profilePicUrl, isOnline: roomId });
+      socket.emit("join", {
+        displayName,
+        profilePicUrl,
+        isOnline: localStorage.getItem("isOnline"),
+      });
       socket.emit("joinRoom", roomId, displayName);
       socket.emit("get-room-info", roomId);
       socket.emit("update-room-info", roomId);
     }
-  }, [displayName, roomId, socket]);
+  }, [roomId, socket]);
 
   //SAVE AND LOAD MESSAGES
   useEffect(() => {
@@ -226,6 +299,14 @@ const Chat = () => {
           const isDuplicate = prev.some((m) => m.id === message.id);
           return isDuplicate ? prev : [...prev, { ...message }];
         });
+      });
+
+      socket.on("IsSenderTyping", (state) => {
+        if (state !== null) {
+          setIsSenderTyping(state);
+        } else {
+          setIsSenderTyping(false);
+        }
       });
     }
   }, [socket]);
@@ -269,9 +350,10 @@ const Chat = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, IsSenderTyping]);
 
   const handleSubmit = (e) => {
+    socket.emit("typing", false, roomId);
     e.preventDefault();
     if (newMessage.trim() === "") return;
 
@@ -322,28 +404,28 @@ const Chat = () => {
   };
 
   return (
-    <div className="min-h-screen bg-whitefrom-blue-50 to-purple-50 sm:flex justify-center sm:items-center">
-      <div className="relative h-screen width-screen sm:w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
+    <div className="min-h-[100dvh] bg-white from-blue-50 to-purple-50 sm:flex justify-center sm:items-center">
+      <div className="relative h-[100dvh] width-screen sm:w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
         {/* Chat Header */}
-        <div className="bg-[#0A2239] p-4 flex items-center justify-between">
+        <div className="bg-gray-200 shadow-3xl dark:bg-[#0A2239] p-4 flex items-center justify-between h-20">
           <div className="flex items-center">
             <ArrowLeft
-              className="text-xl mr-1 text-white cursor-pointer hover:text-gray-400 transition-colors"
+              className="text-xl mr-1 text-black dark:text-white cursor-pointer hover:text-gray-400 transition-colors"
               onClick={() => navigate("/home")}
             />
             <img
               src={sender ? senderPic : userData?.profilePicUrl}
-              className="shadow-xs  w-12 h-12 rounded-full mr-2"
+              className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md"
             />
             {userData.isOnline === "online" && (
               <div className="absolute left-20 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
             )}
             <div className="flex flex-col items-start">
-              <h1 className="ml-3 text-lg sm:text-2xl font-bold text-white">
+              <h1 className="ml-3 text-lg sm:text-2xl font-bold text-black dark:text-white">
                 {sender ? sender : userData?.name}
               </h1>
 
-              <p className="ml-4 text-gray-300 font-semibold text-xs">
+              <p className="ml-4 text-gray-500 dark:text-gray-300  text-xs">
                 {userData?.status || "Available"}
               </p>
             </div>
@@ -358,9 +440,56 @@ const Chat = () => {
             <button className="hidden sm:block text-2xl text-white cursor-pointer font-bold">
               <BiSolidVideo />
             </button>
-            <button className="cursor-pointer text-2xl text-white font-bold">
-              <MdOutlineMoreVert />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                <MdOutlineMoreVert className="text-2xl text-gray-700 dark:text-gray-200" />
+              </button>
+
+              {isOpen && (
+                <div className="absolute z-100 right-0 mt-2 w-64 rounded-lg shadow-lg bg-gray-100 shadow-lg dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                  <div className="p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                      Chat Background
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {backgrounds.map((bg) => (
+                        <div
+                          key={bg.name}
+                          className={`
+                    cursor-pointer transition-all duration-200
+                    bg-gray-100 dark:bg-gray-800 
+                    rounded-lg shadow-sm overflow-hidden
+                    border border-gray-200 dark:border-gray-700
+                    hover:scale-105
+                    ${
+                      selectedBackground === bg.name
+                        ? "ring-2 ring-blue-500"
+                        : ""
+                    }
+                  `}
+                          onClick={() => setSelectedBackground(bg.name)}
+                        >
+                          <div className="p-3">
+                            <div
+                              className="h-12 w-full rounded-md mb-2"
+                              style={{
+                                background: `var(--mode-preview, ${bg.lightPreview})`,
+                              }}
+                            />
+                            <p className="text-sm text-center text-gray-700 dark:text-gray-200">
+                              {bg.name}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -368,65 +497,67 @@ const Chat = () => {
         {sender !== "User" && (
           <div
             style={{
-              backgroundImage: `url(https://cdn.pixabay.com/photo/2023/08/12/02/50/leaves-8184621_1280.png)`,
+              backgroundImage: `url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)`,
               backgroundPosition: "center", // Centers the background image
-              backgroundSize: "cover", // Ensures the image covers the entire container
+              backgroundSize: "cover", // Ensures the image covers the entire container\
+              height: "calc(100dvh - 140px)",
             }}
             className="flex-1 p-1 bg-gray-100 overflow-y-auto space-y-4"
           >
             {loading ? (
-              <div className="p-5">
-                <StyledWrapper className="sm:block hidden mt-100 ">
-                  <div>
-                    <div className="jelly-triangle">
-                      <div className="jelly-triangle__dot" />
-                      <div className="jelly-triangle__traveler" />
-                    </div>
-                    <svg width={0} height={0} className="jelly-maker">
-                      <defs>
-                        <filter id="uib-jelly-triangle-ooze">
-                          <feGaussianBlur
-                            in="SourceGraphic"
-                            stdDeviation="7.3"
-                            result="blur"
-                          />
-                          <feColorMatrix
-                            in="blur"
-                            mode="matrix"
-                            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
-                            result="ooze"
-                          />
-                          <feBlend in="SourceGraphic" in2="ooze" />
-                        </filter>
-                      </defs>
-                    </svg>
-                  </div>
-                </StyledWrapper>
+              // <div className="p-5">
+              //   <StyledWrapper className="sm:block hidden mt-100 ">
+              //     <div>
+              //       <div className="jelly-triangle">
+              //         <div className="jelly-triangle__dot" />
+              //         <div className="jelly-triangle__traveler" />
+              //       </div>
+              //       <svg width={0} height={0} className="jelly-maker">
+              //         <defs>
+              //           <filter id="uib-jelly-triangle-ooze">
+              //             <feGaussianBlur
+              //               in="SourceGraphic"
+              //               stdDeviation="7.3"
+              //               result="blur"
+              //             />
+              //             <feColorMatrix
+              //               in="blur"
+              //               mode="matrix"
+              //               values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
+              //               result="ooze"
+              //             />
+              //             <feBlend in="SourceGraphic" in2="ooze" />
+              //           </filter>
+              //         </defs>
+              //       </svg>
+              //     </div>
+              //   </StyledWrapper>
 
-                <div className="sm:hidden block mt-6 flex flex-col sm:space-y-6 space-y-4 w-full max-w-3xl">
-                  <div className="flex items-start space-x-3">
-                    <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3 w-20 bg-gray-600 rounded animate-pulse" />
-                      <div className="space-y-2">
-                        <div className="h-4 w-3/4 bg-gray-600 rounded animate-pulse" />
-                        <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse" />
-                      </div>
-                    </div>
-                  </div>
+              //   <div className="sm:hidden block mt-6 flex flex-col sm:space-y-6 space-y-4 w-full max-w-3xl">
+              //     <div className="flex items-start space-x-3">
+              //       <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
+              //       <div className="flex-1 space-y-2">
+              //         <div className="h-3 w-20 bg-gray-600 rounded animate-pulse" />
+              //         <div className="space-y-2">
+              //           <div className="h-4 w-3/4 bg-gray-600 rounded animate-pulse" />
+              //           <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse" />
+              //         </div>
+              //       </div>
+              //     </div>
 
-                  <div className="flex items-start space-x-3 justify-end">
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3 w-20 bg-gray-600 rounded animate-pulse ml-auto" />
-                      <div className="space-y-2">
-                        <div className="h-4 w-2/3 bg-gray-600 rounded animate-pulse ml-auto" />
-                        <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse ml-auto" />
-                      </div>
-                    </div>
-                    <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
-                  </div>
-                </div>
-              </div>
+              //     <div className="flex items-start space-x-3 justify-end">
+              //       <div className="flex-1 space-y-2">
+              //         <div className="h-3 w-20 bg-gray-600 rounded animate-pulse ml-auto" />
+              //         <div className="space-y-2">
+              //           <div className="h-4 w-2/3 bg-gray-600 rounded animate-pulse ml-auto" />
+              //           <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse ml-auto" />
+              //         </div>
+              //       </div>
+              //       <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
+              //     </div>
+              //   </div>
+              // </div>
+              <ChatSkeleton></ChatSkeleton>
             ) : (
               <div>
                 {messages.map((message) => (
@@ -440,10 +571,10 @@ const Chat = () => {
                   >
                     <div
                       className={`
-      relative max-w-[70%] p-4 shadow-lg transition-all
+      relative max-w-[70%] min-w-[120px] p-2 px-4 shadow-lg transition-all
       ${
         message.sender === displayName
-          ? "bg-[#598392] rounded-2xl rounded-br-none"
+          ? "bg-gray-900 rounded-2xl rounded-br-none"
           : "bg-[#132E32] rounded-2xl rounded-bl-none"
       }
       ${
@@ -466,18 +597,42 @@ const Chat = () => {
                         </span>
                         {message.sender === displayName && (
                           <div className="flex gap-0.5">
-                            <CheckCheck className={`w-4 h-4 ${
+                            <CheckCheck
+                              className={`w-4 h-4 ${
                                 message.viewed
                                   ? "text-blue-400"
                                   : "text-gray-400"
-                              }`} />
-                            
+                              }`}
+                            />
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
                 ))}
+                {IsSenderTyping ? (
+                  <div className="flex w-full px-4 py-2 justify-start">
+                    <div
+                      className="
+      relative max-w-[70%] p-4 px-4 shadow-lg transition-all
+      bg-[#132E32] rounded-2xl rounded-bl-none
+      text-sm sm:text-base
+      transform hover:scale-[1.02]
+    "
+                   
+                    >
+                      <div className="text-white">
+                        <div className="flex flex-row gap-1">
+                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
+                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.3s]"></div>
+                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <></>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -485,7 +640,7 @@ const Chat = () => {
         )}
 
         {/* Input Form */}
-        <div className="relative px-4 pb-4">
+        <div className="relative">
           {/* Emoji Picker */}
           {showEmojis && (
             <div
@@ -537,14 +692,17 @@ const Chat = () => {
 
           <form
             onSubmit={handleSubmit}
-            className="mt-3 bg-white p-3 flex items-center gap-2 rounded-lg shadow-sm focus-within:border-blue-500 transition-colors" // Added focus-within styling
+            className="bg-gray-50 shadow-3xl h-15 dark:bg-[#0A2239] px-3 flex items-center gap-2 text-black dark:text-white shadow-sm focus-within:border-blue-500 transition-colors" // Added focus-within styling
           >
             <input
               type="text"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={(e) => {
+                setNewMessage(e.target.value);
+                handleTyping(e);
+              }}
               placeholder="Type a message..."
-              className="flex-1 min-w-[100px] px-4 py-2 rounded-full border border-gray-200 focus:outline-none focus:ring-0 focus:border-blue-500 transition-colors" // Improved input styling
+              className="flex-1 text-gray-800 dark:text-gray-200 min-w-[100px] px-4 py-2 rounded-full border border-gray-200 dark:border-gray-500 focus:outline-none focus:ring-0 focus:border-blue-500 transition-colors" // Improved input styling
             />
 
             <div className="flex items-center space-x-2">
@@ -556,7 +714,7 @@ const Chat = () => {
                   setShowEmojis(!showEmojis);
                   setShowStickers(false);
                 }}
-                className="cursor-pointer text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                className="cursor-pointer text-gray-800 dark:text-gray-200 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors"
               >
                 <BsEmojiGrin className="w-5.5 h-5.5" />
               </button>
@@ -566,7 +724,7 @@ const Chat = () => {
                   setShowStickers(!showStickers);
                   setShowEmojis(false);
                 }}
-                className="cursor-pointer text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                className="cursor-pointer text-gray-800 dark:text-gray-200 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors"
               >
                 <PiStickerBold className="w-6.5 h-6.5" />
               </button>
@@ -584,92 +742,5 @@ const Chat = () => {
     </div>
   );
 };
-const StyledWrapper = styled.div`
-  .jelly-triangle {
-    --uib-size: 2.8rem;
-    --uib-speed: 1.75s;
-    --uib-color: #183153;
-    position: relative;
-    height: var(--uib-size);
-    width: var(--uib-size);
-    filter: url("#uib-jelly-triangle-ooze");
-  }
-
-  .jelly-triangle__dot,
-  .jelly-triangle::before,
-  .jelly-triangle::after {
-    content: "";
-    position: absolute;
-    width: 33%;
-    height: 33%;
-    background: var(--uib-color);
-    border-radius: 100%;
-    box-shadow: 0 0 20px rgba(18, 31, 53, 0.3);
-  }
-
-  .jelly-triangle__dot {
-    top: 6%;
-    left: 30%;
-    animation: grow7132 var(--uib-speed) ease infinite;
-  }
-
-  .jelly-triangle::before {
-    bottom: 6%;
-    right: 0;
-    animation: grow7132 var(--uib-speed) ease calc(var(--uib-speed) * -0.666)
-      infinite;
-  }
-
-  .jelly-triangle::after {
-    bottom: 6%;
-    left: 0;
-    animation: grow7132 var(--uib-speed) ease calc(var(--uib-speed) * -0.333)
-      infinite;
-  }
-
-  .jelly-triangle__traveler {
-    position: absolute;
-    top: 6%;
-    left: 30%;
-    width: 33%;
-    height: 33%;
-    background: var(--uib-color);
-    border-radius: 100%;
-    animation: triangulate6214 var(--uib-speed) ease infinite;
-  }
-
-  .jelly-maker {
-    width: 0;
-    height: 0;
-    position: absolute;
-  }
-
-  @keyframes triangulate6214 {
-    0%,
-    100% {
-      transform: none;
-    }
-
-    33.333% {
-      transform: translate(120%, 175%);
-    }
-
-    66.666% {
-      transform: translate(-95%, 175%);
-    }
-  }
-
-  @keyframes grow7132 {
-    0%,
-    100% {
-      transform: scale(1.5);
-    }
-
-    20%,
-    70% {
-      transform: none;
-    }
-  }
-`;
 
 export default Chat;

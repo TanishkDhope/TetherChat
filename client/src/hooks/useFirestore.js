@@ -9,18 +9,18 @@ export const useFirestore = () => {
   
 
     const storeMessages=async(user, sender, messages)=>{
-      //   try {
-      //     const key = generateId(user, sender); // Generate consistent chat ID
+        try {
+          const key = generateId(user, sender); // Generate consistent chat ID
       
-      //     // Reference a subcollection inside "messages"
-      //     const chatRef = doc(db, "chats", key); 
+          // Reference a subcollection inside "messages"
+          const chatRef = doc(db, "chats", key); 
       
-      //     await setDoc(chatRef, { messages }, { merge: false });
+          await setDoc(chatRef, { messages }, { merge: false });
       
-      //     console.log("Messages stored successfully!");
-      // } catch (error) {
-      //     console.error("Error storing messages:", error);
-      // }
+          console.log("Messages stored successfully!");
+      } catch (error) {
+          console.error("Error storing messages:", error);
+      }
     }
 
 
