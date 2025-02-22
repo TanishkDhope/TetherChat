@@ -7,6 +7,8 @@ import { io } from "socket.io-client";
 import { nanoid } from "nanoid";
 import { socketContext } from "../contexts/socketContext";
 import { GetRoomInfo } from "../hooks/useGetRoomInfo";
+import BlurText from "../components/BlurText";
+import SplitText from "../components/SplitText";
 import {
   UserPlus,
   X,
@@ -417,9 +419,15 @@ function Home() {
 
           {/* Display Name */}
           <div>
-          <h1 className="dark:text-white text-3xl sm:text-4xl font-bold text-black ">
-            TetherChat
-          </h1>
+         
+          <BlurText
+  text="TetherChat"
+  delay={50}
+  animateBy="letters"
+  direction="top"
+  className="dark:text-white text-3xl sm:text-4xl font-bold text-black "
+/>
+
           
           </div>
         </div>

@@ -12,6 +12,7 @@
   "dependencies": {
     "@chakra-ui/react": "^3.8.0",
     "@emotion/react": "^11.14.0",
+    "@react-spring/web": "^9.7.5",
     "@tailwindcss/vite": "^4.0.0",
     "axios": "^1.7.9",
     "cloudinary": "^2.5.1",

@@ -7,9 +7,9 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
 
   return (
     <div 
-  className={`h-[100dvh] bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
+  className={`h-full bg-white dark:bg-gray-900 shadow-lg w-full sm:w-100 transition-all duration-300 flex flex-col`}
 >
-  <div className="overflow-y-auto flex-1 p-3">
+  <div className="flex-1 p-3">
 <div
   className="mt-5 mb-5 dark:bg-gray-900 sm:hidden flex items-center border w-full dark:focus-within:border-gray-500 focus-within:border-indigo-500 transition duration-300 pr-3 gap-2 bg-white border-gray-500/30 h-[46px] rounded-[10px] overflow-hidden"
 >
@@ -99,7 +99,7 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
             </div>
           </div>
           
-          <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-700 rounded-full transition-colors">
+          <button className="p-2 cursor-pointer text-gray-400 dark:hover:text-indigo-200 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-700 rounded-full transition-colors">
             <MessageCircle size={20} />
           </button>
         </div>
@@ -173,7 +173,7 @@ export const Sidebar=({isLoading,users,notif,notifications, displayName,onlineUs
             </div>
           </div>
           
-          <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-700 rounded-full transition-colors">
+          <button className="p-2 cursor-pointer text-gray-400 dark:hover:text-indigo-200 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-700 rounded-full transition-colors">
             <MessageCircle size={20} />
           </button>
         </div>

@@ -101,7 +101,7 @@ const Login = () => {
       justifyContent: "center",
       alignItems: "center",
       backgroundImage:
-        "url(https://images.unsplash.com/photo-1509023464722-18d996393ca8?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
+        "url(https://images.unsplash.com/photo-1590142035743-0ffa020065e6?q=80&w=2942&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
       backgroundPosition: "center",
       backgroundSize: "cover",
       overflow: "hidden",

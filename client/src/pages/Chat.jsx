@@ -1,52 +1,70 @@
-import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
+import React, { useState, useRef, useEffect, useContext } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCheck, Send, Smile, Sticker } from "lucide-react";
+import { ArrowLeft, CheckCheck } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { useFirestore } from "../hooks/useFirestore";
 import { FaCamera } from "react-icons/fa";
-import { RiCameraAiLine } from "react-icons/ri";
 import { MdOutlineMoreVert } from "react-icons/md";
 import { IoSearchSharp } from "react-icons/io5";
 import { BiSolidVideo } from "react-icons/bi";
 import { PiStickerBold } from "react-icons/pi";
 import { BsEmojiGrin } from "react-icons/bs";
 import { RiSendPlaneFill } from "react-icons/ri";
-import styled from "styled-components";
 import { ChatSkeleton } from "../components/ChatSkeleton";
 import ThemeContext from "../contexts/ThemeContext";
+import { MdCheck } from "react-icons/md";
+
+
+const bubbleThemes = [
+  {
+    name: "Default",
+    sent: {
+      bg: "bg-blue-500",
+      text: "text-white",
+    },
+    received: {
+      bg: "bg-gray-800",
+      text: "text-white",
+    },
+  },
+  {
+    name: "Forest",
+    sent: {
+      bg: "bg-[#738BD8] dark:bg-[rgb(133,116,238)]",
+      text: "text-white",
+    },
+    received: {
+      bg: "bg-[rgb(45,50,68)] dark:bg-[rgb(44,51,68)]",
+      text: "text-white",
+    },
+  },
+];
 
 const backgrounds = [
   {
-    name: "Classic",
+    name: "Leaves",
     lightPreview:
-      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
-    darkPreview:
-      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
-    lightClass:
-      "url(https://i.pinimg.com/736x/d6/04/22/d604223123c953c23f42651e7bf6c25e.jpg)",
+      "url(https://i.pinimg.com/736x/18/5e/6f/185e6fe7d2cc5be9fc9156928daf708d.jpg)",
     darkClass: "dark:bg-gray-900",
   },
   {
     name: "Ocean",
-    lightPreview: "linear-gradient(to right, #e0f2fe, #bae6fd)",
-    darkPreview: "linear-gradient(to right, #0c4a6e, #082f49)",
-    lightClass: "bg-sky-50",
+    lightPreview:
+      "url(https://i.pinimg.com/736x/28/81/7b/28817bf58ec5b390956117e8f603d692.jpg)",
     darkClass: "dark:bg-sky-950",
   },
   {
     name: "Forest",
-    lightPreview: "linear-gradient(to right, #dcfce7, #bbf7d0)",
-    darkPreview: "linear-gradient(to right, #14532d, #052e16)",
-    lightClass: "bg-green-50",
+    lightPreview:
+      "url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)",
     darkClass: "dark:bg-green-950",
   },
   {
     name: "Sunset",
-    lightPreview: "linear-gradient(to right, #fff7ed, #ffedd5)",
-    darkPreview: "linear-gradient(to right, #7c2d12, #431407)",
-    lightClass: "bg-orange-50",
+    lightPreview:
+      "url(https://i.pinimg.com/736x/82/06/1b/82061b4202291f8918220f3e5d684133.jpg)",
     darkClass: "dark:bg-orange-950",
   },
 ];
@@ -97,6 +115,7 @@ const EMOJI_GROUPS = [
   ["😳", "😱", "😨", "😰", "😢", "😥", "😭", "😫"],
 ];
 const Chat = () => {
+  const [selectedBubbleTheme, setSelectedBubbleTheme] = useState("Default");
   const [loading, setLoading] = useState(true);
   const { roomId } = useParams();
   const [messages, setMessages] = useState([]);
@@ -117,32 +136,47 @@ const Chat = () => {
   const userData = location.state?.userData;
   const { isDarkMode } = useContext(ThemeContext);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [send, setSend] = useState({
+    bg: "bg-blue-500",
+    text: "text-white",
+  });
+  const [recieve, setRecieve] = useState({
+    bg: "bg-gray-800",
+    text: "text-white",
+  });
 
   const senderRef = useRef(sender);
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedBackground, setSelectedBackground] = useState("Classic");
+  const [selectedBackground, setSelectedBackground] = useState("Forest");
+  const [backdrop, setBackdrop] = useState(
+    "url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)"
+  );
   const [typing, setTyping] = useState(false);
   const [IsSenderTyping, setIsSenderTyping] = useState(false);
   const messagesContainerRef = useRef(null);
 
+  const setBubbleTheme = (sent, recieved) => {
+    setSend(sent);
+    setRecieve(recieved);
+  };
 
-const handleTyping = (e) => {
-  const message = e.target.value;
+  const handleTyping = (e) => {
+    const message = e.target.value;
 
-if (!typing) {
-  setTyping(true);
-  socket.emit("typing", true, roomId);
-}
+    if (!typing) {
+      setTyping(true);
+      socket.emit("typing", true, roomId);
+    }
 
-// Clear previous timeout to avoid multiple delayed executions
-if (message.trim() === "") {
-  setTimeout(() => {
-    setTyping(false);
-    socket.emit("typing", false, roomId);
-  }, 500);
-}
-};
+    // Clear previous timeout to avoid multiple delayed executions
+    if (message.trim() === "") {
+      setTimeout(() => {
+        setTyping(false);
+        socket.emit("typing", false, roomId);
+      }, 500);
+    }
+  };
 
   // IntersectionObserver for scroll detection
   useEffect(() => {
@@ -246,7 +280,7 @@ if (message.trim() === "") {
         socket.emit("update-room-info", roomId);
         socket.emit("get-room-info", roomId);
         const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
-        
+
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
             if (senderRef.current == null) {
@@ -375,7 +409,10 @@ if (message.trim() === "") {
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      messagesEndRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
     }
   };
 
@@ -435,7 +472,13 @@ if (message.trim() === "") {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-white from-blue-50 to-purple-50 sm:flex justify-center sm:items-center">
+    <div 
+    style={{
+      backgroundPosition: "center", // Centers the background image
+      backgroundSize: "cover", // Ensures the image covers the entire container
+      backgroundImage: "url(https://images.unsplash.com/photo-1590142035743-0ffa020065e6?q=80&w=2942&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)"
+    }}
+    className="min-h-[100dvh] sm:flex justify-center sm:items-center">
       <div className="relative h-[100dvh] width-screen sm:w-3xl sm:max-w-4xl flex flex-col h-[90vh] sm:h-[90vh] sm:mx-4 sm:my-4 bg-white sm:rounded-lg shadow-2xl overflow-hidden">
         {/* Chat Header */}
         <div className="bg-gray-200 shadow-3xl dark:bg-[#0A2239] p-4 flex items-center justify-between h-20">
@@ -461,61 +504,119 @@ if (message.trim() === "") {
               </p>
             </div>
           </div>
-          <div className="flex flex-row gap-8">
-            <button className="hidden sm:block text-2xl text-white cursor-pointer font-bold">
+          <div className="flex flex-row gap-6">
+            <button className="hidden sm:block text-3xl dark:text-white cursor-pointer font-bold">
               <IoSearchSharp />
             </button>
-            <button className="hidden sm:block text-xl cursor-pointer text-white font-bold">
+            <button className="hidden sm:block text-2xl cursor-pointer dark:text-white font-bold">
               <FaCamera />
             </button>
-            <button className="hidden sm:block text-2xl text-white cursor-pointer font-bold">
+            <button className="hidden sm:block text-3xl dark:text-white cursor-pointer font-bold">
               <BiSolidVideo />
             </button>
             <div className="relative">
               <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="p-2 cursor-pointer rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
-                <MdOutlineMoreVert className="text-2xl text-gray-700 dark:text-gray-200" />
+                <MdOutlineMoreVert className="text-3xl text-gray-700 dark:text-gray-200" />
               </button>
 
               {isOpen && (
-                <div className="absolute z-100 right-0 mt-2 w-64 rounded-lg shadow-lg bg-gray-100 shadow-lg dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                  <div className="p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                      Chat Background
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {backgrounds.map((bg) => (
-                        <div
-                          key={bg.name}
-                          className={`
-                    cursor-pointer transition-all duration-200
-                    bg-gray-100 dark:bg-gray-800 
-                    rounded-lg shadow-sm overflow-hidden
-                    border border-gray-200 dark:border-gray-700
-                    hover:scale-105
-                    ${
-                      selectedBackground === bg.name
-                        ? "ring-2 ring-blue-500"
-                        : ""
-                    }
-                  `}
-                          onClick={() => setSelectedBackground(bg.name)}
-                        >
-                          <div className="p-3">
-                            <div
-                              className="h-12 w-full rounded-md mb-2"
-                              style={{
-                                background: `var(--mode-preview, ${bg.lightPreview})`,
-                              }}
-                            />
-                            <p className="text-sm text-center text-gray-700 dark:text-gray-200">
-                              {bg.name}
-                            </p>
+                <div className="overflow-y-auto absolute z-50 right-[-20px]  mt-1 w-80 rounded-xl shadow-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                  <div className="p-4 space-y-4">
+                    {/* Background Section */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        Chat Background
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        {backgrounds.map((bg) => (
+                          <div
+                            key={bg.name}
+                            className={`
+                      relative cursor-pointer transition-all duration-200
+                      bg-white dark:bg-gray-800 
+                      rounded-xl overflow-hidden
+                      border-2 ${
+                        selectedBackground === bg.name
+                          ? "border-blue-500 dark:border-blue-400"
+                          : "border-gray-200 dark:border-gray-700"
+                      }
+                      hover:shadow-lg transform hover:-translate-y-1
+                    `}
+                            onClick={() => {
+                              setSelectedBackground(bg.name);
+                              setBackdrop(bg.lightPreview);
+                            }}
+                          >
+                            <div className="p-3">
+                              <div
+                                className="h-16 w-full rounded-lg mb-2"
+                                style={{
+                                  background: `var(--mode-preview, ${bg.lightPreview})`,
+                                }}
+                              />
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                  {bg.name}
+                                </p>
+                                {selectedBackground === bg.name && (
+                                  <MdCheck className="text-blue-500 text-xl" />
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bubble Theme Section */}
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                        Message Bubbles
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        {bubbleThemes.map((theme) => (
+                          <div
+                            key={theme.name}
+                            className={`
+                      relative cursor-pointer transition-all duration-200
+                      bg-white dark:bg-gray-800 
+                      rounded-xl overflow-hidden
+                      border-2 ${
+                        selectedBubbleTheme === theme.name
+                          ? "border-blue-500 dark:border-blue-400"
+                          : "border-gray-200 dark:border-gray-700"
+                      }
+                      hover:shadow-lg transform hover:-translate-y-1
+                    `}
+                            onClick={() => {
+                              setSelectedBubbleTheme(theme.name);
+                              setBubbleTheme(theme.sent, theme.received);
+                            }}
+                          >
+                            <div className="p-3">
+                              <div className="flex flex-col space-y-2 mb-2">
+                                <div
+                                  className={`${theme.received.bg} w-3/4 h-6 rounded-lg`}
+                                />
+                                <div
+                                  className={`${theme.sent.bg} w-3/4 h-6 rounded-lg ml-auto`}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                  {theme.name}
+                                </p>
+                                {selectedBubbleTheme === theme.name && (
+                                  <MdCheck className="text-blue-500 text-xl" />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -528,80 +629,31 @@ if (message.trim() === "") {
         {sender !== "User" && (
           <div
             style={{
-              backgroundImage: `url(https://i.pinimg.com/736x/55/f2/e5/55f2e5c4595e7a5f1c16b30a044b03df.jpg)`,
+              backgroundImage: `${backdrop}`,
               backgroundPosition: "center", // Centers the background image
               backgroundSize: "cover", // Ensures the image covers the entire container\
               height: "calc(100dvh - 140px)",
+              msOverflowStyle: "none", // For IE and EdgeF
+              scrollbarWidth: "none", // For Firefox
             }}
-            className="flex-1 p-1 bg-gray-100 overflow-y-auto space-y-4"
+            className="flex-1 p-1 overflow-y-auto space-y-4"
           >
             {loading ? (
-              // <div className="p-5">
-              //   <StyledWrapper className="sm:block hidden mt-100 ">
-              //     <div>
-              //       <div className="jelly-triangle">
-              //         <div className="jelly-triangle__dot" />
-              //         <div className="jelly-triangle__traveler" />
-              //       </div>
-              //       <svg width={0} height={0} className="jelly-maker">
-              //         <defs>
-              //           <filter id="uib-jelly-triangle-ooze">
-              //             <feGaussianBlur
-              //               in="SourceGraphic"
-              //               stdDeviation="7.3"
-              //               result="blur"
-              //             />
-              //             <feColorMatrix
-              //               in="blur"
-              //               mode="matrix"
-              //               values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
-              //               result="ooze"
-              //             />
-              //             <feBlend in="SourceGraphic" in2="ooze" />
-              //           </filter>
-              //         </defs>
-              //       </svg>
-              //     </div>
-              //   </StyledWrapper>
-
-              //   <div className="sm:hidden block mt-6 flex flex-col sm:space-y-6 space-y-4 w-full max-w-3xl">
-              //     <div className="flex items-start space-x-3">
-              //       <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
-              //       <div className="flex-1 space-y-2">
-              //         <div className="h-3 w-20 bg-gray-600 rounded animate-pulse" />
-              //         <div className="space-y-2">
-              //           <div className="h-4 w-3/4 bg-gray-600 rounded animate-pulse" />
-              //           <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse" />
-              //         </div>
-              //       </div>
-              //     </div>
-
-              //     <div className="flex items-start space-x-3 justify-end">
-              //       <div className="flex-1 space-y-2">
-              //         <div className="h-3 w-20 bg-gray-600 rounded animate-pulse ml-auto" />
-              //         <div className="space-y-2">
-              //           <div className="h-4 w-2/3 bg-gray-600 rounded animate-pulse ml-auto" />
-              //           <div className="h-4 w-1/2 bg-gray-600 rounded animate-pulse ml-auto" />
-              //         </div>
-              //       </div>
-              //       <div className="h-8 w-8 rounded-full bg-gray-600 animate-pulse" />
-              //     </div>
-              //   </div>
-              // </div>
               <ChatSkeleton></ChatSkeleton>
             ) : (
-              <div 
-              style={{
-              height: "calc(100dvh - 140px)"
-
-              }}
-              ref={messagesContainerRef}
-              
-  className="overflow-y-auto flex-1 p-1 overflow-y-auto space-y-4 w-full scroll-smooth">
+              <div
+                style={{
+                  height: "calc(100dvh - 140px)",
+                  msOverflowStyle: "none", // For IE and Edge
+                  scrollbarWidth: "none", // For Firefox
+                }}
+                ref={messagesContainerRef}
+                className="overflow-y-auto flex-1 p-1 sm:p-6  space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
+              >
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex w-full px-4 py-2 ${
+                    className={`flex w-full px-1 py-1 sm:py-2 ${
                       message.sender === displayName
                         ? "justify-end"
                         : "justify-start"
@@ -609,25 +661,25 @@ if (message.trim() === "") {
                   >
                     <div
                       className={`
-      relative max-w-[70%] min-w-[120px] p-2 px-4 shadow-lg transition-all
+      relative max-w-[70%] min-w-[140px] p-3 px-4 shadow-lg transition-all
       ${
         message.sender === displayName
-          ? "bg-gray-900 rounded-2xl rounded-br-none"
-          : "bg-[#132E32] rounded-2xl rounded-bl-none"
+          ? `${send.bg} rounded-2xl rounded-br-none ${send.text}`
+          : `${recieve.bg} rounded-2xl rounded-bl-none ${recieve.text}`
       }
       ${
         message.type === "sticker"
           ? "text-4xl sm:text-6xl p-3"
-          : "text-sm sm:text-base"
+          : "text-md sm:text-base p-3"
       }
       transform hover:scale-[1.02]
     `}
                     >
-                      <p className="text-white font-semibold break-words leading-relaxed">
+                      <p className="break-words leading-relaxed">
                         {message.text}
                       </p>
                       <div className="flex items-center justify-end gap-2 ">
-                        <span className="text-[10px] text-white sm:text-xs opacity-75">
+                        <span className="text-[10px] sm:text-xs opacity-75">
                           {new Date(message.timestamp).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",
@@ -657,7 +709,6 @@ if (message.trim() === "") {
       text-sm sm:text-base
       transform hover:scale-[1.02]
     "
-                   
                     >
                       <div className="text-white">
                         <div className="flex flex-row gap-1">
@@ -673,33 +724,31 @@ if (message.trim() === "") {
                 )}
                 <div ref={messagesEndRef} className="h-10 w-full" />
               </div>
-              
             )}
-         
           </div>
         )}
         {showScrollButton && (
-  <button
-    onClick={scrollToBottom}
-    className="fixed bottom-20 left-8 bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full shadow-lg 
+          <button
+            onClick={scrollToBottom}
+            className="cursor-pointer fixed bottom-20 sm:bottom-30 sm:left-90 left-5 bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full shadow-lg 
     transform hover:scale-110 active:scale-95 transition-all duration-200 flex items-center justify-center"
-    aria-label="Scroll to bottom"
-  >
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      className="h-6 w-6"
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2.5"
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <polyline points="19 12 12 19 5 12" />
-    </svg>
-  </button>
-)}
+            aria-label="Scroll to bottom"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <polyline points="19 12 12 19 5 12" />
+            </svg>
+          </button>
+        )}
         {/* Input Form */}
         <div className="relative">
           {/* Emoji Picker */}
