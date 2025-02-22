@@ -136,29 +136,39 @@ const Chat = () => {
   const userData = location.state?.userData;
   const { isDarkMode } = useContext(ThemeContext);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [send, setSend] = useState({
-    bg: "bg-blue-500",
-    text: "text-white",
+  const [send, setSend] = useState(()=>{
+    const pref=localStorage.getItem("prefSend")
+    return pref?JSON.parse(pref):{
+      bg: "bg-blue-500",
+      text: "text-white",
+    }
   });
-  const [recieve, setRecieve] = useState({
-    bg: "bg-gray-800",
-    text: "text-white",
+  const [recieve, setRecieve] = useState(()=>{
+    const pref=localStorage.getItem("prefRecieve")
+    return pref?JSON.parse(pref):{
+      bg: "bg-gray-800",
+      text: "text-white",
+    }
+  });
+  const [backdrop, setBackdrop] = useState(()=>{
+    const pref=localStorage.getItem("prefBackdrop")
+    return pref?JSON.parse(pref):"url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)"
   });
 
   const senderRef = useRef(sender);
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedBackground, setSelectedBackground] = useState("Forest");
-  const [backdrop, setBackdrop] = useState(
-    "url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)"
-  );
+  
   const [typing, setTyping] = useState(false);
   const [IsSenderTyping, setIsSenderTyping] = useState(false);
   const messagesContainerRef = useRef(null);
 
   const setBubbleTheme = (sent, recieved) => {
     setSend(sent);
+    localStorage.setItem("prefSend", JSON.stringify(sent));
     setRecieve(recieved);
+    localStorage.setItem("prefRecieve", JSON.stringify(recieved));
   };
 
   const handleTyping = (e) => {
@@ -548,6 +558,7 @@ const Chat = () => {
                             onClick={() => {
                               setSelectedBackground(bg.name);
                               setBackdrop(bg.lightPreview);
+                              localStorage.setItem("prefBackdrop", JSON.stringify(bg.lightPreview));
                             }}
                           >
                             <div className="p-3">
