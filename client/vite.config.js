@@ -15,7 +15,7 @@ export default defineConfig({
       },
       manifest: {
         name: "TetherChat",
-        short_name: "TChat",
+        short_name: "Tether",
         description: "Cool Chat App",
         theme_color: "#000000",
         display: "standalone",
@@ -23,17 +23,19 @@ export default defineConfig({
         background_color: "#000000",
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: "/chat-192x192.png",
             sizes: "192x192",
             type: "image/png",
+            purpose: "any maskable", // Ensures transparency support
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/chat-512x512.png",
             sizes: "512x512",
             type: "image/png",
+            purpose: "any maskable", // Ensures transparency support
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/chat-512x512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any maskable",
