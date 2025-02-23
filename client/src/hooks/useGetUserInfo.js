@@ -1,6 +1,12 @@
-
-export const useGetUserInfo=()=>{
-    const {email, userId, isAuth, displayName, profilePicUrl}=JSON.parse(localStorage.getItem("auth-info")) || {}
-
-    return{email, userId, isAuth, displayName, profilePicUrl}
-}
+export const useGetUserInfo = () => {
+    const authInfo = JSON.parse(localStorage.getItem("auth-info") || "{}");
+  
+    return {
+      email: authInfo.email || null,
+      userId: authInfo.userId || null,
+      isAuth: authInfo.isAuth || false,
+      displayName: authInfo.displayName || "Guest",
+      profilePicUrl: authInfo.profilePicUrl || null, // Allow it to be null
+    };
+  };
+  

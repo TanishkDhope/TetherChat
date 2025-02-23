@@ -15,6 +15,7 @@ import { RiSendPlaneFill } from "react-icons/ri";
 import { ChatSkeleton } from "../components/ChatSkeleton";
 import ThemeContext from "../contexts/ThemeContext";
 import { MdCheck } from "react-icons/md";
+import { useTransition, animated } from '@react-spring/web';
 
 
 const bubbleThemes = [
@@ -170,6 +171,16 @@ const Chat = () => {
     setRecieve(recieved);
     localStorage.setItem("prefRecieve", JSON.stringify(recieved));
   };
+  const transitions = useTransition(messages, {
+    keys: message => message.id,
+    from: message => ({
+      opacity: 0,
+      transform: `translateX(${message.sender === displayName ? '50px' : '-50px'})`,
+    }),
+    enter: { opacity: 1, transform: 'translateX(0px)' },
+    leave: { opacity: 0, transform: 'translateY(40px)' },
+    config: { tension: 300, friction: 30 },
+  });
 
   const handleTyping = (e) => {
     const message = e.target.value;
@@ -661,56 +672,55 @@ const Chat = () => {
                 ref={messagesContainerRef}
                 className="overflow-y-auto flex-1 p-1 sm:p-6  space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
               >
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex w-full px-1 py-1 sm:py-2 ${
-                      message.sender === displayName
-                        ? "justify-end"
-                        : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`
-      relative max-w-[70%] min-w-[140px] p-3 px-4 shadow-lg transition-all
-      ${
-        message.sender === displayName
-          ? `${send.bg} rounded-2xl rounded-br-none ${send.text}`
-          : `${recieve.bg} rounded-2xl rounded-bl-none ${recieve.text}`
-      }
-      ${
-        message.type === "sticker"
-          ? "text-4xl sm:text-6xl p-3"
-          : "text-md sm:text-base p-3"
-      }
-      transform hover:scale-[1.02]
-    `}
-                    >
-                      <p className="break-words leading-relaxed">
-                        {message.text}
-                      </p>
-                      <div className="flex items-center justify-end gap-2 ">
-                        <span className="text-[10px] sm:text-xs opacity-75">
-                          {new Date(message.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        {message.sender === displayName && (
-                          <div className="flex gap-0.5">
-                            <CheckCheck
-                              className={`w-4 h-4 ${
-                                message.viewed
-                                  ? "text-blue-400"
-                                  : "text-gray-400"
-                              }`}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+               {transitions((style, message) => (
+  <animated.div
+    key={message.id}
+    style={style}
+    className={`flex w-full px-1 py-1 sm:py-2 ${
+      message.sender === displayName ? "justify-end" : "justify-start"
+    }`}
+  >
+    <div
+      className={`
+        relative max-w-[70%] min-w-[140px] p-3 px-4 shadow-lg transition-all
+        ${
+          message.sender === displayName
+            ? `${send.bg} rounded-2xl rounded-br-none ${send.text}`
+            : `${recieve.bg} rounded-2xl rounded-bl-none ${recieve.text}`
+        }
+        ${
+          message.type === "sticker"
+            ? "text-4xl sm:text-6xl p-3"
+            : "text-md sm:text-base p-3"
+        }
+        transform hover:scale-[1.02]
+      `}
+    >
+      <p className="break-words leading-relaxed">
+        {message.text}
+      </p>
+      <div className="flex items-center justify-end gap-2 ">
+        <span className="text-[10px] sm:text-xs opacity-75">
+          {new Date(message.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+        {message.sender === displayName && (
+          <div className="flex gap-0.5">
+            <CheckCheck
+              className={`w-4 h-4 ${
+                message.viewed
+                  ? "text-blue-400"
+                  : "text-gray-400"
+              }`}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  </animated.div>
+))}
                 {IsSenderTyping ? (
                   <div className="flex w-full px-4 py-2 justify-start">
                     <div

@@ -42,7 +42,7 @@ const Login = () => {
         profilePicUrl,
         isAuth: true,
       };
-      addUser({ email, name: displayName, photoURL });
+      addUser({ email, name: displayName, profilePicUrl });
       localStorage.setItem("auth-info", JSON.stringify(authInfo));
       navigate("/home");
       // Redirect user or update UI based on login success
@@ -96,7 +96,7 @@ const Login = () => {
   return (
     <div
     style={{
-      minHeight: "100vh",
+      minHeight: "100dvh",
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
@@ -106,7 +106,7 @@ const Login = () => {
       backgroundSize: "cover",
       overflow: "hidden",
     }}
-    className="bg-gray-100 overflow-hidden min-h-screen"
+    className="bg-gray-100 overflow-y-hidden min-h-[100dvh]"
   >
     <div className="bg-white rounded-xl p-8 xl:mx-auto xl:w-full shadow-md p-4 xl:max-w-sm 2xl:max-w-md">
       <h2 className="text-center text-2xl font-bold leading-tight text-black">

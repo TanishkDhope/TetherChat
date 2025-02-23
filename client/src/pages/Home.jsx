@@ -45,6 +45,7 @@ import { Sidebar } from "../components/Sidebar";
 import { MdOutlineMoreVert } from "react-icons/md";
 import { useFirestore } from "../hooks/useFirestore";
 import  ThemeContext  from "../contexts/ThemeContext";
+import PwaPrompt from "../components/PwaPrompt";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +105,7 @@ function Home() {
       toggle: () => setPrivacyMode(!privacyMode),
     },
   ];
+  
 
   const handleStatusUpdate = () => {
     socket.emit("join", {
@@ -347,6 +349,7 @@ function Home() {
   };
 
   return (
+    
     <div className="min-h-100dvdh flex flex-col bg-gray-100">
       {/* Header with Display Name and Icon */}
       <header className="dark:bg-[rgb(21,21,21)] shadow-3xl  bg- p-4 flex justify-between items-center">
@@ -988,6 +991,8 @@ function Home() {
           New Chat
         </span>
       </button>
+
+
       {isUserModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-30 dark:bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div
@@ -1194,6 +1199,8 @@ function Home() {
           </button>
         </div>
       </div>
+      <PwaPrompt/>
+
     </div>
   );
 }

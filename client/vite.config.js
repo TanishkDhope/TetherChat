@@ -17,7 +17,10 @@ export default defineConfig({
         name: "TetherChat",
         short_name: "TChat",
         description: "Cool Chat App",
-        theme_color: "#ffffff",
+        theme_color: "#000000",
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#000000",
         icons: [
           {
             src: "/pwa-192x192.png",
