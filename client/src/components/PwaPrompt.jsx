@@ -51,26 +51,26 @@ const PwaPrompt = () => {
   }, [showPrompt, isInstallable]);
 
   const handleInstall = async () => {
-    if (deferredPrompt) {
-      try {
-        console.log('Triggering install prompt');
-        await deferredPrompt.prompt();
-        const choiceResult = await deferredPrompt.userChoice;
-        console.log('Install choice:', choiceResult.outcome);
-        
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-        } else {
-          console.log('User dismissed the install prompt');
-        }
-      } catch (error) {
-        console.error('Install error:', error);
-      } finally {
-        setDeferredPrompt(null);
-        setShowPrompt(false);
+    if (!deferredPrompt) return;
+  
+    try {
+      console.log('Triggering install prompt');
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+        setDeferredPrompt(null); // Clear after successful install
+      } else {
+        console.log('User dismissed the install prompt');
       }
+    } catch (error) {
+      console.error('Install error:', error);
+    } finally {
+      setShowPrompt(false);
     }
   };
+  
 
   const handleReject = () => {
     setShowPrompt(false);

@@ -15,7 +15,7 @@ const BlurText = ({
   onAnimationComplete,
 }) => {
   const elements = animateBy === 'words' ? text.split(' ') : text.split('');
-  const [inView, setInView] = useState(false);
+  const [hasAnimated, setHasAnimated] = useState(false); // Prevents reanimation
   const ref = useRef();
   const animatedCount = useRef(0);
 
@@ -35,10 +35,12 @@ const BlurText = ({
   ];
 
   useEffect(() => {
+    if (hasAnimated) return; // Prevent re-observing after first animation
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setInView(true);
+          setHasAnimated(true);
           observer.unobserve(ref.current);
         }
       },
@@ -48,22 +50,22 @@ const BlurText = ({
     observer.observe(ref.current);
 
     return () => observer.disconnect();
-  }, [threshold, rootMargin]);
+  }, [threshold, rootMargin, hasAnimated]);
 
   const springs = useSprings(
     elements.length,
     elements.map((_, i) => ({
       from: animationFrom || defaultFrom,
-      to: inView
+      to: hasAnimated
         ? async (next) => {
-          for (const step of (animationTo || defaultTo)) {
-            await next(step);
+            for (const step of (animationTo || defaultTo)) {
+              await next(step);
+            }
+            animatedCount.current += 1;
+            if (animatedCount.current === elements.length && onAnimationComplete) {
+              onAnimationComplete();
+            }
           }
-          animatedCount.current += 1;
-          if (animatedCount.current === elements.length && onAnimationComplete) {
-            onAnimationComplete();
-          }
-        }
         : animationFrom || defaultFrom,
       delay: i * delay,
       config: { easing },

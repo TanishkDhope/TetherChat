@@ -305,7 +305,7 @@ const Chat = () => {
         if (messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
             if (senderRef.current == null) {
-              senderRef.current = displayName;
+              senderRef.current = userData.name;
             }
             storeMessages(displayName, senderRef.current, messagesRef.current);
             localStorage.setItem(
@@ -662,17 +662,42 @@ const Chat = () => {
           >
             {loading ? (
               <ChatSkeleton></ChatSkeleton>
+            ) :  messages.length === 0 ? (
+              // No chats available message
+              <div 
+                className="w-full h-full flex flex-col items-center justify-center text-gray-500"
+                style={{ height: "calc(100dvh - 140px)" }}
+              >
+                <div className="flex flex-col items-center space-y-4">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-16 w-16 opacity-50"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                  <p className="text-lg font-medium">No messages yet</p>
+                  <p className="text-sm">Start a conversation by sending a message!</p>
+                </div>
+              </div>
             ) : (
               <div
                 style={{
                   height: "calc(100dvh - 140px)",
-                  msOverflowStyle: "none", // For IE and Edge
-                  scrollbarWidth: "none", // For Firefox
+                  msOverflowStyle: "none",
+                  scrollbarWidth: "none",
                 }}
                 ref={messagesContainerRef}
-                className="overflow-y-auto flex-1 p-1 sm:p-6  space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
+                className="overflow-y-auto flex-1 p-1 sm:p-6 space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
               >
-               {transitions((style, message) => (
+                {transitions((style, message) => (
   <animated.div
     key={message.id}
     style={style}
