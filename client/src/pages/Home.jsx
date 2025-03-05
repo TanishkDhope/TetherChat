@@ -8,7 +8,8 @@ import { nanoid } from "nanoid";
 import { socketContext } from "../contexts/socketContext";
 import { GetRoomInfo } from "../hooks/useGetRoomInfo";
 import BlurText from "../components/BlurText";
-import SplitText from "../components/SplitText";
+import {generateToken} from "../Firebase/firebase";
+import { onMessage } from "firebase/messaging";
 import {
   UserPlus,
   X,
@@ -46,6 +47,7 @@ import { MdOutlineMoreVert } from "react-icons/md";
 import { useFirestore } from "../hooks/useFirestore";
 import  ThemeContext  from "../contexts/ThemeContext";
 import PwaPrompt from "../components/PwaPrompt";
+import {messaging} from "../Firebase/firebase";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -138,6 +140,13 @@ function Home() {
   useEffect(() => {
     setSocket(io("https://chatapp-dcac.onrender.com"));
   }, []);
+
+  useEffect(()=>{
+    generateToken();
+    onMessage(messaging, (payload) => {
+      console.log("Message received. ", payload);
+    });
+  },[])
 
   useEffect(() => {
     localStorage.setItem("notifications", JSON.stringify(notifications));

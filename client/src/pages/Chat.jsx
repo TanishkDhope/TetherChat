@@ -525,14 +525,14 @@ const Chat = () => {
               </p>
             </div>
           </div>
-          <div className="flex flex-row gap-6">
+          <div className="flex flex-row sm:gap-6">
             <button className="hidden sm:block text-3xl dark:text-white cursor-pointer font-bold">
               <IoSearchSharp />
             </button>
             <button className="hidden sm:block text-2xl cursor-pointer dark:text-white font-bold">
               <FaCamera />
             </button>
-            <button className="hidden sm:block text-3xl dark:text-white cursor-pointer font-bold">
+            <button onClick={()=>{navigate("/call",{ state: { userData, roomId } })}} className="block text-3xl dark:text-white cursor-pointer font-bold">
               <BiSolidVideo />
             </button>
             <div className="relative">

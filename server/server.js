@@ -12,6 +12,8 @@ const app = express();
 const server = http.createServer(app);
 let onlineUsers = [];
 let rooms = [];
+let firstUser = null; // Stores the first connected user
+let offers=[];
 
 
 const io = new Server(server, {
@@ -144,6 +146,13 @@ io.on("connection", (socket) => {
     onlineUsers = onlineUsers.filter((user) => user.id !== socket.id);
     console.log("A user disconnected with socket ID:", socket.id);
     io.emit("onlineUsers", onlineUsers);
+
+    
+    if (socket.id === firstUser) {
+      firstUser = null;
+  }
+
+  socket.broadcast.emit("hangup"); // End call if user disconnects
   });
 
 
@@ -151,11 +160,47 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("IsSenderTyping", state);
   })
 
+ 
+
+  // If an offer exists, send it to the new user
+  if (offers.length > 0) {
+    socket.emit("offer", offers[0]);
+}
+
+if (!firstUser) {
+    firstUser = socket.id;
+} else {
+    io.to(firstUser).emit("ready"); // Notify first user
+    io.to(socket.id).emit("ready"); // Notify second user
+}
+
+socket.on("offer", (offer) => {
+    offers.push(offer);
+    socket.broadcast.emit("offer", offer);
+});
+
+socket.on("answer", (answer) => {
+    socket.broadcast.emit("answer", answer);
+});
+
+socket.on("ice-candidate", (candidate) => {
+    socket.broadcast.emit("ice-candidate", candidate);
+});
+
+// Handle hangup event
+socket.on("hangup", () => {
+    console.log("Call ended by:", socket.id);
+    socket.broadcast.emit("hangup"); // Notify other peer
+    offers = []; // Clear offers after hangup
+});
+
+
+
 });
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
 server.listen(process.env.PORT || 5000, () => {
-  console.log(`Server is running on port ${process.env.PORT}`);
+  console.log(`Server is running on port ${process.env.PORT || 5000}`);
 });
