@@ -36,9 +36,11 @@ const VideoCall = () => {
     });
 
     socket.on("ice-candidate", async (candidate) => {
-      await peerConnection.current.addIceCandidate(
-        new RTCIceCandidate(candidate)
-      );
+      if (!peerConnection.current.remoteDescription) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+      
     });
 
     socket.on("hangup", () => {
@@ -104,7 +106,14 @@ const VideoCall = () => {
 
   const createPeerConnection = async (offer) => {
     peerConnection.current = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [{ 
+        urls: "stun:stun.l.google.com:19302" 
+      }, { 
+        urls: "turn:your-turn-server.com", 
+        username: "user", 
+        credential: "pass" 
+      }]
+      
     });
 
     peerConnection.current.onicecandidate = (event) => {
