@@ -363,7 +363,7 @@ export default function Videocall() {
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-screen bg-slate-900 overflow-hidden">
+    <div ref={containerRef} className="relative w-screen h-[100dvh] bg-slate-900 overflow-hidden">
       {/* Status indicator */}
       <animated.div 
         style={statusAnimation}
@@ -502,14 +502,7 @@ export default function Videocall() {
               <span className="text-sm md:text-base font-medium">Start Call</span>
             </Button>
             
-            {/* Settings button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-full w-10 h-10 md:w-12 md:h-12 border-2 border-slate-600 bg-slate-800 hover:bg-slate-700 ml-2"
-            >
-              <Settings className="h-4 w-4 md:h-5 md:w-5 text-white" />
-            </Button>
+          
           </div>
         ) : (
           <div className="bg-slate-800 bg-opacity-80 backdrop-blur-sm p-2 md:p-3 rounded-full flex items-center gap-2 md:gap-4 shadow-lg">
