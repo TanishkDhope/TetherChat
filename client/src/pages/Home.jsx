@@ -10,6 +10,8 @@ import { GetRoomInfo } from "../hooks/useGetRoomInfo";
 import BlurText from "../components/BlurText";
 import {generateToken} from "../Firebase/firebase";
 import { onMessage } from "firebase/messaging";
+import toast, { Toaster, resolveValue } from 'react-hot-toast';
+import { privFalse, privTrue, notifTrue, notifFalse } from "../hooks/useToasts";
 import {
   UserPlus,
   X,
@@ -71,6 +73,7 @@ function Home() {
   const [isOnline, setIsOnline] = useState("online");
   const [statusMessage, setStatusMessage] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+
   const [theme, setTheme] = useState("light");
   const [notifications, setNotifications] = useState(() => {
     const savedNotifications = localStorage.getItem("notifications");
@@ -98,14 +101,29 @@ function Home() {
       icon: <Bell />,
       label: "Notifications",
       state: notif,
-      toggle: () => setNotif(!notif),
+      toggle: () => {
+        if (!notif) {
+          notifTrue();
+        } else {
+          notifFalse(); // Call when disabling Privacy Mode
+        }
+        setNotif(!notif);
+      },
     },
     {
       icon: <Lock />,
       label: "Privacy Mode",
       state: privacyMode,
-      toggle: () => setPrivacyMode(!privacyMode),
-    },
+      toggle: () => {
+        if (!privacyMode) {
+          privTrue();
+        } else {
+          privFalse(); // Call when disabling Privacy Mode
+        }
+        setPrivacyMode(!privacyMode);
+      },
+    }
+    
   ];
   
 
@@ -360,19 +378,21 @@ function Home() {
   return (
     
     <div className="min-h-100dvdh flex flex-col bg-gray-100">
+  <Toaster>
+      {(t) => (
+        <div
+          className={`transition-all duration-300 ease-in-out transform ${
+            t.visible ? "opacity-85 scale-100" : "opacity-0 scale-95"
+          }  mt-3 bg-white/80 backdrop-blur-md shadow-lg text-gray-900 px-4 py-2 rounded-lg  dark:bg-gray-800/80 dark:text-gray-100 dark:border-gray-700`}
+        >
+          {resolveValue(t.message, t)}
+        </div>
+      )}
+    </Toaster>
       {/* Header with Display Name and Icon */}
       <header className="dark:bg-[rgb(21,21,21)] shadow-3xl  bg- p-4 flex justify-between items-center">
         {/* Profile Section */}
         <div className=" relative flex items-center space-x-4 header-item">
-          {/* <img
-            src={
-              profilePicUrl ||
-              "https://t3.ftcdn.net/jpg/08/44/84/46/240_F_844844652_Z3SF4M5HIZsSMkGLt5ts0cr1s5O4mdQL.jpg"
-            }
-            alt="Profile"
-            className="cursor-pointer w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-md"
-            onClick={() => setShowProfile(!showProfile)} // Toggle profile dropdown
-          /> */}
          {showProfile && (
   <div
     ref={profileRef}

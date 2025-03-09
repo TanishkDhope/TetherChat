@@ -16,8 +16,9 @@ import { ChatSkeleton } from "../components/ChatSkeleton";
 import ThemeContext from "../contexts/ThemeContext";
 import { MdCheck } from "react-icons/md";
 import { useTransition, animated } from '@react-spring/web';
+import toast, { Toaster } from 'react-hot-toast';
 
-
+const notify = () => toast('Here is your toast.');
 const bubbleThemes = [
   {
     name: "Default",
@@ -126,7 +127,6 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const emojiRef = useRef(null);
   const stickerRef = useRef(null);
-  const { socket, setSocket } = useContext(socketContext);
   const { displayName, profilePicUrl } = useGetUserInfo();
   const [sender, setSender] = useState(null);
   const [inRoom, setInRoom] = useState([]);
@@ -164,7 +164,7 @@ const Chat = () => {
   const [typing, setTyping] = useState(false);
   const [IsSenderTyping, setIsSenderTyping] = useState(false);
   const messagesContainerRef = useRef(null);
-
+const {socket, setSocket} = useContext(socketContext);
   const setBubbleTheme = (sent, recieved) => {
     setSend(sent);
     localStorage.setItem("prefSend", JSON.stringify(sent));
@@ -513,7 +513,7 @@ const Chat = () => {
               className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md"
             />
             {userData.isOnline === "online" && (
-              <div className="absolute left-20 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
+              <div className="absolute left-20 sm:left-24 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
             )}
             <div className="flex flex-col items-start">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-black dark:text-white">
@@ -525,14 +525,15 @@ const Chat = () => {
               </p>
             </div>
           </div>
+          <Toaster />
           <div className="flex flex-row sm:gap-6">
             <button className="hidden sm:block text-3xl dark:text-white cursor-pointer font-bold">
               <IoSearchSharp />
             </button>
-            <button className="hidden sm:block text-2xl cursor-pointer dark:text-white font-bold">
+            <button onClick={notify} className="hidden sm:block text-2xl cursor-pointer dark:text-white font-bold">
               <FaCamera />
             </button>
-            <button onClick={()=>{navigate("/call",{ state: { userData, roomId } })}} className="block text-3xl dark:text-white cursor-pointer font-bold">
+            <button onClick={()=>{navigate("/vc",{ state: { userData, roomId } })}} className="block text-3xl dark:text-white cursor-pointer font-bold">
               <BiSolidVideo />
             </button>
             <div className="relative">
