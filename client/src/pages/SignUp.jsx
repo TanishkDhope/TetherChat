@@ -78,17 +78,20 @@ const SignUp = () => {
     console.log("Sign up with Google");
    try{
     const result = await signInWithPopup(auth, googleProvider);
+    // Google accounts may have no photo — fall back to the default avatar.
+    const photoURL =
+      result.user.photoURL ||
+      "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg";
     const authInfo = {
       userId: result.user.uid,
       displayName: result.user.displayName,
       email: result.user.email,
       isAuth: true,
-      profilePicUrl: result.user.photoURL,  // Save the Cloudinary URL
+      profilePicUrl: photoURL,
     };
     const email = result.user.email;
     const name = result.user.displayName;
-    const photoURL = result.user.photoURL;
-    addUser({ email, name, photoURL });
+    addUser({ email, name, profilePicUrl: photoURL });
 
     localStorage.setItem("auth-info", JSON.stringify(authInfo));
     navigate("/home");

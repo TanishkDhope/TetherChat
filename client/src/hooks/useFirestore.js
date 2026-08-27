@@ -1,4 +1,4 @@
-import { serverTimestamp,getDoc,getDocs,doc,collection, setDoc } from "firebase/firestore";
+import { serverTimestamp,getDoc,getDocs,doc,collection, setDoc, query, where, deleteDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "../Firebase/firebase";
 
 export const useFirestore = () => {
@@ -97,6 +97,134 @@ export const useFirestore = () => {
     
 
     
-    return {storeMessages,getMessages, getRegisteredUsers, addRegisteredUser}
+    // ---- GROUPS (durable, keyed by member email) ----
+
+    // Persist a group. `members` is an array of user emails (including the creator).
+    const createGroup = async (group) => {
+      try {
+        const groupRef = doc(db, "groups", group.id);
+        await setDoc(groupRef, {
+          id: group.id,
+          name: group.name,
+          members: group.members,
+          createdBy: group.createdBy,
+          groupPicUrl: group.groupPicUrl || "",
+          createdAt: serverTimestamp(),
+        });
+      } catch (error) {
+        console.error("Error creating group:", error);
+      }
+    };
+
+    // Fetch every group the given email is a member of.
+    const getUserGroups = async (email) => {
+      try {
+        if (!email) return [];
+        const groupsQuery = query(
+          collection(db, "groups"),
+          where("members", "array-contains", email)
+        );
+        const snapshot = await getDocs(groupsQuery);
+        return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      } catch (error) {
+        console.error("Error fetching groups:", error);
+        return [];
+      }
+    };
+
+    const deleteGroup = async (groupId) => {
+      try {
+        await deleteDoc(doc(db, "groups", groupId));
+      } catch (error) {
+        console.error("Error deleting group:", error);
+      }
+    };
+
+    // ---- FRIENDS (durable, keyed by email on users/<email> docs) ----
+
+    // A -> B request: add A to B's incoming requests, and track it as sent on A.
+    const sendFriendRequest = async (fromEmail, toEmail) => {
+      try {
+        await updateDoc(doc(db, "users", toEmail), {
+          friendRequests: arrayUnion(fromEmail),
+        });
+        await updateDoc(doc(db, "users", fromEmail), {
+          sentRequests: arrayUnion(toEmail),
+        });
+      } catch (error) {
+        console.error("Error sending friend request:", error);
+      }
+    };
+
+    // B accepts A: both become friends; clear the pending request on both sides.
+    const acceptFriendRequest = async (myEmail, requesterEmail) => {
+      try {
+        await updateDoc(doc(db, "users", myEmail), {
+          friends: arrayUnion(requesterEmail),
+          friendRequests: arrayRemove(requesterEmail),
+        });
+        await updateDoc(doc(db, "users", requesterEmail), {
+          friends: arrayUnion(myEmail),
+          sentRequests: arrayRemove(myEmail),
+        });
+      } catch (error) {
+        console.error("Error accepting friend request:", error);
+      }
+    };
+
+    const declineFriendRequest = async (myEmail, requesterEmail) => {
+      try {
+        await updateDoc(doc(db, "users", myEmail), {
+          friendRequests: arrayRemove(requesterEmail),
+        });
+        await updateDoc(doc(db, "users", requesterEmail), {
+          sentRequests: arrayRemove(myEmail),
+        });
+      } catch (error) {
+        console.error("Error declining friend request:", error);
+      }
+    };
+
+    // Read the current user's friend graph (emails only). Missing fields -> [].
+    const getFriendData = async (myEmail) => {
+      try {
+        if (!myEmail) return { friends: [], friendRequests: [], sentRequests: [] };
+        const snap = await getDoc(doc(db, "users", myEmail));
+        const data = snap.exists() ? snap.data() : {};
+        return {
+          friends: data.friends || [],
+          friendRequests: data.friendRequests || [],
+          sentRequests: data.sentRequests || [],
+        };
+      } catch (error) {
+        console.error("Error fetching friend data:", error);
+        return { friends: [], friendRequests: [], sentRequests: [] };
+      }
+    };
+
+    // Resolve a list of emails into profile objects for rendering.
+    const getUsersByEmails = async (emails) => {
+      try {
+        if (!emails || emails.length === 0) return [];
+        const snaps = await Promise.all(
+          emails.map((e) => getDoc(doc(db, "users", e)))
+        );
+        return snaps
+          .filter((s) => s.exists())
+          .map((s) => {
+            const d = s.data();
+            return {
+              email: d.email || s.id,
+              displayName: d.displayName,
+              profilePicUrl: d.profilePicUrl,
+            };
+          });
+      } catch (error) {
+        console.error("Error fetching users by emails:", error);
+        return [];
+      }
+    };
+
+    return {storeMessages,getMessages, getRegisteredUsers, addRegisteredUser, createGroup, getUserGroups, deleteGroup, sendFriendRequest, acceptFriendRequest, declineFriendRequest, getFriendData, getUsersByEmails}
 
 }

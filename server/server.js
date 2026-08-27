@@ -32,40 +32,43 @@ io.on("connection", (socket) => {
 
   //USER LOGIC
 
-  socket.on("join", ({ displayName, profilePicUrl, status, isOnline }) => {
+  socket.on("join", ({ displayName, email, profilePicUrl, status, isOnline }) => {
     if (onlineUsers.find((user) => user.name === displayName)) {
       console.log("User already exists:", displayName);
       onlineUsers = onlineUsers.map((user) =>
         user.name == displayName
-          ? { id: socket.id, name: displayName, profilePicUrl, status, isOnline }
+          ? { id: socket.id, name: displayName, email, profilePicUrl, status, isOnline }
           : user
       );
       io.emit("onlineUsers", onlineUsers);
       return;
     }
-    onlineUsers.push({ id: socket.id, name: displayName, profilePicUrl, status, isOnline });
-      ("User joined:", displayName);
+    onlineUsers.push({ id: socket.id, name: displayName, email, profilePicUrl, status, isOnline });
+    console.log("User joined:", displayName);
     io.emit("onlineUsers", onlineUsers);
   });
-
-  //ROOM JOIN LOGIC
 
   socket.on("requestJoin", ({ from, to, roomId }) => {
     socket.to(to).emit("requestJoin", { from, roomId });
   });
 
-  //GROUP CREATION LOGIC
-  socket.on("createGroup", (data) => {
-    const group = {
-      id: nanoid(),
-      name: data.groupName,
-      users: data.users,
-    };
-    socket.emit("groupCreated", group);
+
+  socket.on("createGroup", (group) => {
+    socket.broadcast.emit("groupCreated", group);
   });
 
   socket.on("deleteGroup", (groupId) => {
-    
+    io.emit("groupDeleted", groupId);
+  });
+
+  //FRIENDS LOGIC (durable in Firestore on the client; relayed here for live UX).
+  //Each payload carries a `toEmail` the recipient client filters on.
+  socket.on("friendRequest", (payload) => {
+    socket.broadcast.emit("friendRequest", payload);
+  });
+
+  socket.on("friendAccepted", (payload) => {
+    socket.broadcast.emit("friendAccepted", payload);
   });
 
 
@@ -111,6 +114,7 @@ io.on("connection", (socket) => {
           users: room.users.filter(user => user.name !== displayName)
         };
       }
+      return room;
     })
       // Remove empty rooms
       rooms = rooms.filter((room) => room?.users.length > 0);

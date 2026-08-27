@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCheck } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
 import { io } from "socket.io-client";
+import { SOCKET_URL } from "../lib/config";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { useFirestore } from "../hooks/useFirestore";
 import { FaCamera } from "react-icons/fa";
@@ -127,14 +128,19 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const emojiRef = useRef(null);
   const stickerRef = useRef(null);
-  const { displayName, profilePicUrl } = useGetUserInfo();
+  const { displayName, email, profilePicUrl } = useGetUserInfo();
   const [sender, setSender] = useState(null);
   const [inRoom, setInRoom] = useState([]);
   const { storeMessages, getMessages } = useFirestore();
   const [senderPic, setSenderPic] = useState(null);
   const [senderObject, setSenderObject] = useState(null);
   const location = useLocation();
-  const userData = location.state?.userData;
+  // On a hard refresh / direct link, React Router state is gone — fall back to
+  // the room metadata we stashed in localStorage when entering the chat.
+  const userData =
+    location.state?.userData ||
+    JSON.parse(localStorage.getItem(`room_${roomId}`) || "null");
+  const isGroup = !!userData?.isGroup;
   const { isDarkMode } = useContext(ThemeContext);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [send, setSend] = useState(()=>{
@@ -291,7 +297,7 @@ const {socket, setSocket} = useContext(socketContext);
   useEffect(() => {
     // Check if the socket already exists, and if not, establish a new connection
     if (!socket) {
-      const newSocket = io("https://chatapp-dcac.onrender.com");
+      const newSocket = io(SOCKET_URL);
       setSocket(newSocket);
     }
     return () => {
@@ -302,17 +308,21 @@ const {socket, setSocket} = useContext(socketContext);
         socket.emit("get-room-info", roomId);
         const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
 
-        if (messagesRef.current.length > 0) {
+        // Firestore persistence is keyed on a 1:1 pair; skip it for group rooms
+        // (group messages still persist per-room in localStorage).
+        if (!isGroup && messagesRef.current.length > 0) {
           if (dbLen !== messagesRef.current.length) {
             if (senderRef.current == null) {
-              senderRef.current = userData.name;
+              senderRef.current = userData?.name;
             }
-            storeMessages(displayName, senderRef.current, messagesRef.current);
-            localStorage.setItem(
-              `msgLen_${roomId}`,
-              JSON.stringify(messagesRef.current.length)
-            );
-            console.log("CHANGES NEEDED");
+            if (senderRef.current) {
+              storeMessages(displayName, senderRef.current, messagesRef.current);
+              localStorage.setItem(
+                `msgLen_${roomId}`,
+                JSON.stringify(messagesRef.current.length)
+              );
+              console.log("CHANGES NEEDED");
+            }
           } else {
             console.log("NO CHANGES Needed");
           }
@@ -327,6 +337,7 @@ const {socket, setSocket} = useContext(socketContext);
     if (displayName && socket) {
       socket.emit("join", {
         displayName,
+        email,
         profilePicUrl,
         isOnline: localStorage.getItem("isOnline"),
       });
@@ -508,20 +519,36 @@ const {socket, setSocket} = useContext(socketContext);
               className="text-xl mr-1 text-black dark:text-white cursor-pointer hover:text-gray-400 transition-colors"
               onClick={() => navigate("/home")}
             />
-            <img
-              src={sender ? senderPic : userData?.profilePicUrl}
-              className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md"
-            />
-            {userData.isOnline === "online" && (
+            {isGroup ? (
+              userData?.groupPicUrl ? (
+                <img
+                  src={userData.groupPicUrl}
+                  alt={userData?.name}
+                  className="w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md object-cover"
+                />
+              ) : (
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md bg-blue-500 text-white flex items-center justify-center text-2xl font-bold">
+                  {userData?.name?.[0]?.toUpperCase() || "#"}
+                </div>
+              )
+            ) : (
+              <img
+                src={sender ? senderPic : userData?.profilePicUrl}
+                className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md"
+              />
+            )}
+            {!isGroup && userData?.isOnline === "online" && (
               <div className="absolute left-20 sm:left-24 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
             )}
             <div className="flex flex-col items-start">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-black dark:text-white">
-                {sender ? sender : userData?.name}
+                {isGroup ? userData?.name : sender ? sender : userData?.name}
               </h1>
 
               <p className="ml-4 text-gray-500 dark:text-gray-300  text-xs">
-                {userData?.status || "Available"}
+                {isGroup
+                  ? `${userData?.members?.length || userData?.users?.length || 0} members`
+                  : userData?.status || "Available"}
               </p>
             </div>
           </div>

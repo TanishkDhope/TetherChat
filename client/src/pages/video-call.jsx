@@ -6,6 +6,7 @@ import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Settings, User } from "l
 import { cn } from "@/lib/utils"
 import { useMobile } from "@/hooks/use-mobile"
 import io from "socket.io-client"
+import { SOCKET_URL } from "../lib/config"
 
 export default function Videocall() {
   const [isCallActive, setIsCallActive] = useState(false)
@@ -15,7 +16,18 @@ export default function Videocall() {
   const [callStatus, setCallStatus] = useState("") // "connecting", "connected", "ended"
   const [isFullscreen, setIsFullscreen] = useState(false)
   
-  const socket = io("https://chatapp-dcac.onrender.com")
+  // Create the socket exactly once (was previously re-created on every render,
+  // leaking a new connection each time) and tear it down on unmount.
+  const socketRef = useRef(null)
+  if (socketRef.current === null) {
+    socketRef.current = io(SOCKET_URL)
+  }
+  const socket = socketRef.current
+  useEffect(() => {
+    return () => {
+      socketRef.current?.disconnect()
+    }
+  }, [])
   const peerConnection = useRef(null)
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)

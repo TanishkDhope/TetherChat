@@ -1,5 +1,7 @@
 # Logs
 logs
+.claude
+.playwright-mcp
 *.log
 npm-debug.log*
 yarn-debug.log*
