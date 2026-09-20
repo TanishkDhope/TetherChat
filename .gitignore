@@ -1,2 +1,8 @@
 .claude
 .playwright-mcp
+
+*.md
+AUDIT.md
+docs
+
+.env*

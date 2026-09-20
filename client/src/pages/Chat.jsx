@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useContext } from "react";
+import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
+import { nanoid } from "nanoid";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCheck } from "lucide-react";
 import { socketContext } from "../contexts/socketContext";
@@ -14,6 +15,9 @@ import { PiStickerBold } from "react-icons/pi";
 import { BsEmojiGrin } from "react-icons/bs";
 import { RiSendPlaneFill } from "react-icons/ri";
 import { ChatSkeleton } from "../components/ChatSkeleton";
+import SmartReplyChips from "../components/SmartReplyChips";
+import { useSmartReplies } from "../hooks/useSmartReplies";
+import { toTurns } from "../lib/smartReplies";
 import ThemeContext from "../contexts/ThemeContext";
 import { MdCheck } from "react-icons/md";
 import { useTransition, animated } from '@react-spring/web';
@@ -126,6 +130,7 @@ const Chat = () => {
   const [showEmojis, setShowEmojis] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
   const emojiRef = useRef(null);
   const stickerRef = useRef(null);
   const { displayName, email, profilePicUrl } = useGetUserInfo();
@@ -169,6 +174,15 @@ const Chat = () => {
   
   const [typing, setTyping] = useState(false);
   const [IsSenderTyping, setIsSenderTyping] = useState(false);
+
+  // Smart replies: the predicate is the only place that knows how a message
+  // identifies its sender (becomes `m.senderId === uid` after the DB migration).
+  const turns = useMemo(
+    () => toTurns(messages, (m) => m.sender === displayName),
+    [messages, displayName]
+  );
+  const { replies: smartReplies, loading: smartRepliesLoading } =
+    useSmartReplies(turns, { enabled: !loading });
   const messagesContainerRef = useRef(null);
 const {socket, setSocket} = useContext(socketContext);
   const setBubbleTheme = (sent, recieved) => {
@@ -458,7 +472,7 @@ const {socket, setSocket} = useContext(socketContext);
     if (newMessage.trim() === "") return;
 
     const message = {
-      id: Date.now(),
+      id: nanoid(),
       text: newMessage,
       sender: displayName, // Make sure sender is "user"
       type: "text",
@@ -489,7 +503,7 @@ const {socket, setSocket} = useContext(socketContext);
 
   const sendSticker = (sticker) => {
     const message = {
-      id: Date.now(),
+      id: nanoid(),
       text: sticker,
       sender: displayName,
       viewed: false,
@@ -874,11 +888,21 @@ const {socket, setSocket} = useContext(socketContext);
             </div>
           )}
 
+          <SmartReplyChips
+            replies={smartReplies}
+            loading={smartRepliesLoading}
+            onPick={(text) => {
+              setNewMessage(text);
+              inputRef.current?.focus();
+            }}
+          />
+
           <form
             onSubmit={handleSubmit}
             className="bg-gray-50 shadow-3xl h-15 dark:bg-[#0A2239] px-3 flex items-center gap-2 text-black dark:text-white shadow-sm focus-within:border-blue-500 transition-colors" // Added focus-within styling
           >
             <input
+              ref={inputRef}
               type="text"
               value={newMessage}
               onChange={(e) => {
