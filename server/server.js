@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { Server } from "socket.io";
 import {nanoid} from "nanoid"
 import { suggestRepliesRouter, warmSmartReplies } from "./src/routes/suggestReplies.js";
+import { checkToxicity } from "./src/services/moderation.js";
 
 
 dotenv.config();
@@ -137,17 +138,61 @@ io.on("connection", (socket) => {
     socket.emit("user-notif", onlineUsers.find((user) => user.name === name) || "", message);
   });
 
-  socket.on("message-notif", (message, userId, username,roomId)=>{
-    socket.to(userId).emit("message-notif", message,username, roomId);
-  })
+  socket.on("message-notif", async (message, userId, username, roomId) => {
+    if (message?.text && message.type === "text") {
+      try {
+        const { isToxic } = await checkToxicity(message.text);
+        if (isToxic) {
+          const moderatedNotif = {
+            ...message,
+            text: "Message hidden due to content moderation",
+            isModerated: true,
+          };
+          socket.to(userId).emit("message-notif", moderatedNotif, username, roomId);
+          return;
+        }
+      } catch (err) {
+        console.error("[moderation] Error checking toxicity for notification:", err);
+      }
+    }
+    socket.to(userId).emit("message-notif", message, username, roomId);
+  });
 
-  socket.on("update-room-info", (roomId)=>{
+  socket.on("update-room-info", (roomId) => {
     socket.to(roomId).emit("room-info", rooms.find((room) => room?.id === roomId));
-  })
-  //MESSAGES LOGIC  
-  socket.on("send-message", (message, roomId) => {
+  });
+
+  // MESSAGES LOGIC
+  socket.on("send-message", async (message, roomId) => {
+    if (!message) return;
+
+    // Check toxicity for text messages before delivery
+    if (message.type === "text" && typeof message.text === "string" && message.text.trim()) {
+      try {
+        const { isToxic, reason } = await checkToxicity(message.text);
+        if (isToxic) {
+          // 1. Notify sender: Message hidden, removed by content moderation
+          socket.emit("message-moderated", {
+            messageId: message.id,
+            reason: reason || "This message was removed by content moderation.",
+          });
+
+          // 2. Deliver to everyone else in the room with moderation status and placeholder text
+          const moderatedMessage = {
+            ...message,
+            text: "Message hidden due to content moderation",
+            isModerated: true,
+          };
+          socket.to(roomId).emit("recieve-message", moderatedMessage);
+          return;
+        }
+      } catch (err) {
+        console.error("[moderation] Error checking toxicity in send-message:", err);
+      }
+    }
+
     socket.to(roomId).emit("recieve-message", message);
-  })
+  });
 
   socket.on("disconnect", () => {
     onlineUsers = onlineUsers.filter((user) => user.id !== socket.id);

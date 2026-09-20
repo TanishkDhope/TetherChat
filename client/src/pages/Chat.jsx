@@ -392,21 +392,49 @@ const {socket, setSocket} = useContext(socketContext);
         socket.emit("message-notif", message, user.id, displayName, roomId);
       });
 
-      socket.on("recieve-message", (message) => {
+      const handleRecieveMessage = (message) => {
         setMessages((prev) => {
-          // Avoid duplicating messages
-          const isDuplicate = prev.some((m) => m.id === message.id);
-          return isDuplicate ? prev : [...prev, { ...message }];
+          const existingIndex = prev.findIndex((m) => m.id === message.id);
+          if (existingIndex !== -1) {
+            const updated = [...prev];
+            updated[existingIndex] = { ...updated[existingIndex], ...message };
+            return updated;
+          }
+          return [...prev, { ...message }];
         });
-      });
+      };
 
-      socket.on("IsSenderTyping", (state) => {
+      const handleMessageModerated = ({ messageId, reason }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  isModerated: true,
+                  moderationReason: reason || "This message was removed by content moderation.",
+                }
+              : m
+          )
+        );
+      };
+
+      const handleSenderTyping = (state) => {
         if (state !== null) {
           setIsSenderTyping(state);
         } else {
           setIsSenderTyping(false);
         }
-      });
+      };
+
+      socket.on("recieve-message", handleRecieveMessage);
+      socket.on("message-moderated", handleMessageModerated);
+      socket.on("IsSenderTyping", handleSenderTyping);
+
+      return () => {
+        socket.off("recieve-message", handleRecieveMessage);
+        socket.off("message-moderated", handleMessageModerated);
+        socket.off("IsSenderTyping", handleSenderTyping);
+      };
     }
   }, [socket]);
 
@@ -763,9 +791,24 @@ const {socket, setSocket} = useContext(socketContext);
         transform hover:scale-[1.02]
       `}
     >
-      <p className="break-words leading-relaxed">
-        {message.text}
-      </p>
+      {message.isModerated || message.text === "Message hidden due to content moderation" ? (
+        <div className="space-y-0.5 py-0.5 select-none">
+          {message.sender === displayName ? (
+            <div>
+              <p className="font-semibold text-xs sm:text-sm">Message hidden</p>
+              <p className="text-[11px] sm:text-xs opacity-80">This message was removed by content moderation.</p>
+            </div>
+          ) : (
+            <div>
+              <p className="italic text-xs sm:text-sm opacity-90">Message hidden due to content moderation</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="break-words leading-relaxed">
+          {message.text}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-2 ">
         <span className="text-[10px] sm:text-xs opacity-75">
           {new Date(message.timestamp).toLocaleTimeString([], {

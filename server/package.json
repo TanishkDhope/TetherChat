@@ -13,6 +13,8 @@
   "type": "module",
   "description": "",
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.71",
+    "ai": "^7.0.107",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
