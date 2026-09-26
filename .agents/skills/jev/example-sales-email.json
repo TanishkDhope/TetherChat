@@ -1,0 +1,28 @@
+{
+  "state": "Subject: Quick question about TetherChat for our ops team\n\nHi,\n\nI saw your launch post about the new analytics dashboard last week - nice work. We're a 12-person freight logistics startup, and right now our ops lead exports CSVs from Postgres by hand every morning. It's eating roughly six hours a week and people are starting to make decisions off stale numbers.\n\nWe already run Postgres and Slack, and I'd like to know whether TetherChat can connect to our existing database and whether you offer a pilot for small teams. We could start next month; our tooling budget is around $400/month.\n\nIf it's easier, I'm happy to jump on a 20-minute call this week.\n\nThanks,\nPriya Raman\nHead of Operations, Northwind Freight",
+  "questions": {
+    "lead_strength": {
+      "type": "score",
+      "instructions": "How strong a sales lead is this email?",
+      "criteria": [
+        "Cold or irrelevant - no real buying signal",
+        "Warm - interested but no clear budget, timeline, or fit",
+        "Strong - clear problem, budget, and timeline from a decision-maker"
+      ]
+    },
+    "email_kind": {
+      "type": "choice",
+      "instructions": "What kind of email is this?",
+      "criteria": {
+        "inbound_sales_inquiry": "A potential customer asking about buying or piloting the product",
+        "cold_outreach": "Someone selling to us or pitching a partnership",
+        "support_request": "An existing user reporting a problem or asking for help",
+        "recruiting_or_other": "Job seeking, networking, or anything else"
+      }
+    },
+    "needs_personal_reply": {
+      "type": "noul",
+      "instructions": "Does this email need a personal reply from a human rather than an automated or templated response?"
+    }
+  }
+}

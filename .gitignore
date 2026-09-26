@@ -7,3 +7,8 @@ docs
 
 .env*
 .aider*
+
+graphify*
+
+.playwright*
+.dsh

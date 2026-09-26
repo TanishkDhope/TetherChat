@@ -1,4 +1,4 @@
-from app.postprocess import clean_candidates, dedupe, detokenize, is_acceptable, jaccard
+from app.postprocess import dedupe, detokenize, is_acceptable, jaccard
 
 
 def test_detokenize_dailydialog_spacing():
@@ -23,14 +23,3 @@ def test_jaccard_and_dedupe():
     assert jaccard("sure, sounds good", "Sure sounds good!") == 1.0
     kept = dedupe(["Sounds good.", "Sounds good!", "Sorry, I can't make it.", "sounds really good"])
     assert kept == ["Sounds good.", "Sorry, I can't make it."]
-
-
-def test_clean_candidates_end_to_end():
-    raw = [
-        "Sure ! What time ?",
-        "sure , what time ?",
-        "<|im_start|>garbage",
-        "Sorry , I ' m busy today .",
-        "I ’ d love to !",
-    ]
-    assert clean_candidates(raw, 3) == ["Sure! What time?", "Sorry, I'm busy today.", "I'd love to!"]

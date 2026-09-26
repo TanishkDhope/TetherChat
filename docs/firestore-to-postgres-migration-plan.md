@@ -1,6 +1,6 @@
 # TetherChat — Firestore → PostgreSQL Migration Plan
 
-**Status:** proposal · **Date:** 2026-09-19 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL. Firebase Auth is retained. Data access on the Node server uses Prisma.
+**Status:** refined / approved (Phase 0 active) · **Date:** 2026-09-26 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
 
 ---
 
@@ -49,10 +49,13 @@
 | Decision | Choice | Why |
 |---|---|---|
 | ORM | **Prisma** | Schema-first, built-in migrations, works in plain-JS ESM (the repo is untyped). |
-| Auth | **Keep Firebase Auth** | Smallest blast radius. `firebase-admin` verifies ID tokens on REST and on the Socket.IO handshake. |
-| Hosting | Postgres next to the server (Render Postgres, or Neon) | The server already runs on Render (`client/src/lib/config.js` default URL). Plan is host-agnostic. |
+| Auth | **Keep Firebase Auth** | Smallest blast radius. `firebase-admin` verifies ID tokens on REST and on Socket.IO handshake. Supports Firebase emulator in local development and service account JSON in production (Render). |
+| Hosting | **Neon PostgreSQL** | Server connects via Neon pooled connection string (`DATABASE_URL` with `&pgbouncer=true`) and direct unpooled connection (`DIRECT_URL`) for migrations. |
+| Phasing | **Phase 0 first** | Build schema, Prisma migrations, Express REST/Socket API, client data hooks (`useApi`), and seed script (`prisma/seed.js`) for end-to-end dev/test before executing ETL. |
 | Cutover style | **Single maintenance window** (recommended); dual-write variant documented in §6.3 | User base is small; dual-write adds a second code path to a client that already has too many. |
 | Read receipts | `conversation_members.last_read_message_id` cursor rather than a per-message receipts table | One integer per member per conversation instead of one row per message per member. |
+| Moderation | `is_moderated` boolean + optional `moderation_reason` on `messages` table | Explicit schema support for the Jev AI content moderation system (`server/src/services/moderation.js`). |
+| Search Index | **Deferred GIN index** | Keep initial migration lean; add full-text GIN index in a future migration when search UI is introduced. |
 
 ---
 
@@ -223,18 +226,20 @@ CREATE UNIQUE INDEX conversations_dm_key_uidx ON conversations (dm_key) WHERE ki
 CREATE INDEX conversations_updated_idx ON conversations (updated_at DESC);
 
 CREATE TABLE messages (
-  id              bigserial PRIMARY KEY,
-  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_id       text REFERENCES users(id) ON DELETE SET NULL,
-  kind            message_kind NOT NULL DEFAULT 'text',
-  body            text NOT NULL CHECK (length(body) BETWEEN 1 AND 4000),
-  client_msg_id   text,                                  -- client-generated idempotency key (old numeric id during ETL)
-  created_at      timestamptz NOT NULL DEFAULT now(),
+  id                bigserial PRIMARY KEY,
+  conversation_id   uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id         text REFERENCES users(id) ON DELETE SET NULL,
+  kind              message_kind NOT NULL DEFAULT 'text',
+  body              text NOT NULL CHECK (length(body) BETWEEN 1 AND 4000),
+  is_moderated      boolean NOT NULL DEFAULT false,
+  moderation_reason text,
+  client_msg_id     text,                                  -- client-generated idempotency key (old numeric id during ETL)
+  created_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (conversation_id, sender_id, client_msg_id)
 );
 CREATE INDEX messages_conv_id_idx ON messages (conversation_id, id DESC);   -- keyset pagination
 CREATE INDEX messages_sender_idx  ON messages (sender_id);
--- optional, for a future search box:
+-- full-text search index (deferred until search UI is built):
 -- CREATE INDEX messages_body_fts_idx ON messages USING gin (to_tsvector('simple', body));
 
 CREATE TABLE conversation_members (
@@ -277,7 +282,7 @@ Why these shapes:
 
 ```prisma
 generator client { provider = "prisma-client-js" }
-datasource db     { provider = "postgresql"; url = env("DATABASE_URL") }
+datasource db     { provider = "postgresql"; url = env("DATABASE_URL"); directUrl = env("DIRECT_URL") }
 
 enum FriendshipStatus { pending accepted blocked }
 enum ConversationKind { dm group }
@@ -347,13 +352,15 @@ model ConversationMember {
 }
 
 model Message {
-  id              BigInt      @id @default(autoincrement())
-  conversationId  String      @map("conversation_id") @db.Uuid
-  senderId        String?     @map("sender_id")
-  kind            MessageKind @default(text)
-  body            String
-  clientMsgId     String?     @map("client_msg_id")
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  id                BigInt      @id @default(autoincrement())
+  conversationId    String      @map("conversation_id") @db.Uuid
+  senderId          String?     @map("sender_id")
+  kind              MessageKind @default(text)
+  body              String
+  isModerated       Boolean     @default(false) @map("is_moderated")
+  moderationReason  String?     @map("moderation_reason")
+  clientMsgId       String?     @map("client_msg_id")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User?        @relation(fields: [senderId], references: [id], onDelete: SetNull)
   readCursors  ConversationMember[]
@@ -473,15 +480,16 @@ New layout:
 
 ```
 server/
-  prisma/schema.prisma, prisma/migrations/0001_init/migration.sql
+  prisma/schema.prisma, prisma/migrations/0001_init/migration.sql, prisma/seed.js
   src/db.js            # PrismaClient singleton, BigInt → string JSON replacer
-  src/auth.js          # verifyFirebaseToken (Express middleware) + socketAuth (io.use)
+  src/auth.js          # verifyFirebaseToken (Express middleware) + socketAuth (io.use) [emulator & service-account aware]
   src/routes/me.js     # GET /me, POST /me/sync, PATCH /me
   src/routes/users.js  # GET /users/search?q=
   src/routes/friends.js
   src/routes/conversations.js  # incl. /:id/messages
+  src/routes/suggestReplies.js # protected with verifyFirebaseToken
   src/realtime.js      # Socket.IO handlers (presence, rooms, messages, typing, signalling)
-  src/services/*.js    # transactions (below)
+  src/services/*.js    # transactions (below) & moderation.js
   scripts/migrate/{extract,transform,load,verify,reverse-etl}.js
   server.js            # bootstrap only
 ```
@@ -494,13 +502,13 @@ server/
 | `socket.on("join", {displayName, email, …})` trusts the payload (`:35-49`) | `io.use(socketAuth)` verifies `handshake.auth.token`; `socket.data.uid` set once; `join` event removed. |
 | `io.emit("onlineUsers", fullList)` on every change (`:43, 48, 152`) | `presence:online {uid}` / `presence:offline {uid}` diff events to the user's **friends only**; `GET /me/friends` returns `online` flags from the Map. |
 | `joinRoom` by display name (`:76-105`) | `join-conversation {id}` → membership check → `socket.join`. |
-| `send-message` relays unpersisted (`:145-147`) | insert via `messageService.send()` → emit stored row (with `id`, `createdAt`, `senderId`) to the room. |
+| `send-message` relays unpersisted (`:145-147`) | toxicity check via `moderation.js` → insert via `messageService.send()` (persisting `is_moderated`, `moderation_reason`) → emit stored row to the room. |
 | `friendRequest`/`friendAccepted`/`createGroup`/`deleteGroup` broadcast (`:56-72`) | emitted by the REST handlers to `user:<uid>` rooms only. |
 | `disconnect` → `broadcast.emit("hangup")` (`:159`) | `hangup` only to conversations in `socket.data.activeCalls`. |
 | `offer/answer/ice-candidate` broadcast (`:181-192`) | `socket.to("conversation:<id>").emit(...)`, payload includes `conversationId`. |
 | `cors({ origin: "*" })` (`:20-26`) | `origin: process.env.CORS_ORIGIN.split(",")`. |
 
-Environment: `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `CORS_ORIGIN`, `PORT`. Dependencies added: `@prisma/client`, `prisma` (dev), `firebase-admin`, `zod` (payload validation). `nodemon` moves to devDependencies; `start` becomes `node server.js`.
+Environment: `DATABASE_URL` (Neon pooled with `&pgbouncer=true`), `DIRECT_URL` (Neon unpooled host for migrations), `FIREBASE_SERVICE_ACCOUNT` (base64 JSON on Render), `FIREBASE_AUTH_EMULATOR_HOST` (local dev/test), `CORS_ORIGIN`, `PORT`. Dependencies added: `@prisma/client`, `prisma` (dev), `firebase-admin`, `zod` (payload validation). `nodemon` moves to devDependencies; `start` becomes `node server.js`.
 
 **Transactions (`src/services/`)**
 
@@ -510,7 +518,7 @@ Environment: `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `CORS_ORI
 | `friends.request(me, other)` | validate `me <> other` and both exist → `INSERT INTO friendships … ON CONFLICT (user_lo,user_hi) DO NOTHING` (0 rows → 409 already-pending/friends). |
 | `conversations.createGroup(me, dto)` | `INSERT conversations` → `INSERT conversation_members` for `{me: owner} ∪ members` — members must be accepted friends of `me` (`WHERE EXISTS friendships accepted`) or the transaction aborts. |
 | `conversations.deleteGroup(me, id)` | `DELETE FROM conversations WHERE id=$1 AND kind='group' AND EXISTS (SELECT 1 FROM conversation_members WHERE conversation_id=$1 AND user_id=$2 AND role='owner')` — cascade removes members + messages. |
-| `messages.send(me, dto)` | membership check → `INSERT INTO messages … ON CONFLICT (conversation_id, sender_id, client_msg_id) DO NOTHING RETURNING *` → `UPDATE conversations SET updated_at = now()` → `UPDATE conversation_members SET last_read_message_id = <new id> WHERE user_id = me`. |
+| `messages.send(me, dto)` | membership check → toxicity classification via `moderation.js` → `INSERT INTO messages (conversation_id, sender_id, client_msg_id, kind, body, is_moderated, moderation_reason) … ON CONFLICT (conversation_id, sender_id, client_msg_id) DO NOTHING RETURNING *` → `UPDATE conversations SET updated_at = now()` → `UPDATE conversation_members SET last_read_message_id = <new id> WHERE user_id = me`. |
 | `messages.markRead(me, conv, msgId)` | `UPDATE conversation_members SET last_read_message_id = GREATEST(COALESCE(last_read_message_id,0), $msgId) WHERE …` — monotonic. |
 
 **Query catalogue**
@@ -708,21 +716,37 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 | Socket.IO across >1 server instance. | Out of scope now; `@socket.io/redis-adapter` + presence in Redis when needed — the design already keys everything by uid/conversation so nothing else changes. |
 | `BigInt` message ids leaking into JSON. | `db.js` installs a `JSON.stringify` replacer / serialise as strings in the API layer; client treats ids as opaque strings. |
 
-### Open questions
+### Resolved Decisions (Alignment from 2026-09-26 Review)
 
-1. Retention: should Firestore's export be kept past 90 days for compliance/history?
-2. Should blocked users (`friendship_status = 'blocked'`) be surfaced in v1, or is the enum just future-proofing?
-3. Message search — worth adding the GIN index now (cheap) even if the UI search box stays unwired?
+1. **Phasing & Roadmap**: Executing **Phase 0 first** — Schema, Prisma migrations, Express REST/Socket.IO routes, client `useApi` integration, and local seed script before running ETL on production data.
+2. **Database Provider & Connection**: **Neon PostgreSQL** (AWS `ap-southeast-1`). Configured with pooled connection `DATABASE_URL` (`&pgbouncer=true`) and direct unpooled connection `DIRECT_URL` for migrations.
+3. **Authentication Strategy**: Firebase Auth retained. In local development and automated E2E testing, use Firebase Auth emulator (`FIREBASE_AUTH_EMULATOR_HOST`). In production deployed on Render, use Firebase Admin Service Account JSON key.
+4. **Content Moderation Integration**: Explicit columns `is_moderated boolean DEFAULT false` and `moderation_reason text` added to `messages` table schema and Prisma model to support the Jev AI content moderation system (`server/src/services/moderation.js`).
+5. **Message Search Index**: Defer GIN full-text search index for now; add it in a future migration when a search UI is implemented.
+6. **Local Development Seeding**: Include `server/prisma/seed.js` with sample users and conversations for local testing and E2E validation.
+7. **Data Retention**: Firestore export retained in GCS for 90 days following cutover.
+8. **Blocked Users**: `blocked` enum value kept in schema for future-proofing, no UI exposed in v1.
 
 ### Execution checklist
 
-- [ ] Phase 0 branch: Prisma schema + `0001_init` SQL committed; `prisma migrate deploy` clean on an empty DB
-- [ ] Server routes/services/realtime implemented; `zod` validation on every payload
-- [ ] Client `useApi.js` + page changes; `firebase/firestore` import gone from the bundle
-- [ ] ETL scripts + `overrides.csv` mechanism; two timed rehearsals on staging
-- [ ] Smoke checklist 6.2 green on staging
-- [ ] Tag `pre-postgres`; maintenance gate deployed; `T_freeze` recorded
-- [ ] Export → ETL → verify (all hard gates) → `pg_dump`
-- [ ] Deploy server + client; `/healthz` OK; smoke checklist green in production
-- [ ] Firestore rules set to read-only; 7-day bake with error-rate watch
-- [ ] Phase 6 decommission; `migration_log` dropped; Firestore export retained per retention answer
+- [ ] **Phase 0 (Active)**:
+  - [ ] Add `@prisma/client`, `prisma`, `firebase-admin` dependencies to `server/package.json`
+  - [ ] Configure `DATABASE_URL` and `DIRECT_URL` in `server/.env`
+  - [ ] Initialize `server/prisma/schema.prisma` and baseline migration `0001_init/migration.sql`
+  - [ ] Run `prisma migrate deploy` against Neon DB
+  - [ ] Create `server/prisma/seed.js` and verify database seeding
+  - [ ] Implement `src/db.js` (Prisma singleton + BigInt serializer)
+  - [ ] Implement `src/auth.js` (Firebase ID token verification, emulator & service-account aware)
+  - [ ] Implement REST endpoints: `/me`, `/users`, `/friends`, `/conversations`, and secure `/suggest-replies`
+  - [ ] Implement `src/realtime.js` (server-persisted messages, moderation check, scoped rooms & signalling)
+  - [ ] Implement client `src/lib/api.js` and `src/hooks/useApi.js` replacing `useFirestore.js`
+  - [ ] Update `Home.jsx` and `Chat.jsx` to use API conversation UUIDs and server message pagination
+  - [ ] Validate flow with Playwright E2E and capture screenshots to `output/screenshots/`
+- [ ] **Phase 1–2 (Production Cutover & ETL)**:
+  - [ ] Tag `pre-postgres`; deploy client maintenance gate; record `T_freeze`
+  - [ ] Export Firestore → ETL (`extract.js`, `transform.js` with `overrides.csv`, `load.js`) → verify hard gates
+  - [ ] Deploy server + client to Render/Vercel
+  - [ ] Run Smoke Checklist 6.2 in production
+- [ ] **Phase 5–6 (Bake & Decommission)**:
+  - [ ] 7-day bake; keep Firestore read-only
+  - [ ] Decommission Firestore; drop `migration_log`; keep backup per 90-day retention

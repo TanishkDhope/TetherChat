@@ -13,7 +13,7 @@ class StubGenerator:
 
     def candidates(self, prompt, n):
         assert prompt.endswith("<|im_start|>assistant\n")
-        return ["Sure ! What time ?", "sure , what time ?", "Sorry , I ' m busy ."]
+        return ["Sure! What time?", "Sorry, I'm busy."]
 
 
 def make_client(monkeypatch):

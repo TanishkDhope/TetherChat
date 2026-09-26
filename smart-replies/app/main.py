@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from .generate import MODEL_FILE, MODEL_REPO, generator
-from .postprocess import clean_candidates
 from .prompt import build_prompt
 from .schemas import SuggestRequest, SuggestResponse
 
@@ -37,8 +36,7 @@ def suggest_replies(req: SuggestRequest):
     if prompt is None:
         # Last turn is the user's own — nothing to reply to.
         return SuggestResponse(replies=[], latencyMs=0)
-    raw = generator.candidates(prompt, req.n)
-    replies = clean_candidates(raw, req.n)
+    replies = generator.candidates(prompt, req.n)
     latency_ms = int((time.perf_counter() - started) * 1000)
-    log.info("n=%d raw=%d kept=%d latency=%dms", req.n, len(raw), len(replies), latency_ms)
+    log.info("n=%d kept=%d latency=%dms", req.n, len(replies), latency_ms)
     return SuggestResponse(replies=replies, latencyMs=latency_ms)

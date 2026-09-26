@@ -1,61 +1,45 @@
-import React, { useEffect, useState, useMemo, useContext, useRef } from "react";
-import { auth } from "../Firebase/firebase";
-import { signOut } from "firebase/auth";
-import { useNavigate } from "react-router-dom";
-import { useGetUserInfo } from "../hooks/useGetUserInfo";
-import { io } from "socket.io-client";
-import { nanoid } from "nanoid";
-import { socketContext } from "../contexts/socketContext";
-import { GetRoomInfo } from "../hooks/useGetRoomInfo";
-import BlurText from "../components/BlurText";
-import {generateToken} from "../Firebase/firebase";
-import { onMessage } from "firebase/messaging";
-import toast, { Toaster, resolveValue } from 'react-hot-toast';
-import { privFalse, privTrue, notifTrue, notifFalse } from "../hooks/useToasts";
-import {
-  UserPlus,
-  X,
-  Users,
-  Check,
-  LogOut,
-  Trash2,
-  MessageSquare,
-  Heart,
-  Video,
-  Phone,
-  Mic,
-  SendHorizontal,
-  Smile,
-  Moon,
-  Sun,
-  Palette,
-  Globe,
-  Send,
-  Bell,
-  Lock,
-  Plus,
-  MessageSquareMore,
-  MessageSquarePlus,
-  Users2,
-  Camera,
-  Settings,
-  Save,
-  Loader2,
-  Pencil,
-} from "lucide-react";
 import axios from "axios";
+import { signOut } from "firebase/auth";
+import { onMessage } from "firebase/messaging";
+import {
+  Bell,
+  Camera,
+  Check,
+  Globe,
+  Heart,
+  Loader2,
+  Lock,
+  LogOut,agy 
+  Save,
+  Send,
+  Settings,
+  Sun,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+import { nanoid } from "nanoid";
+import { useContext, useEffect, useRef, useState } from "react";
+import toast, { Toaster, resolveValue } from "react-hot-toast";
 import { AiOutlineUser } from "react-icons/ai";
+import { BiSupport } from "react-icons/bi";
+import { CiCreditCard1 } from "react-icons/ci";
+import { MdOutlineMoreVert } from "react-icons/md";
 import { RxExit } from "react-icons/rx";
 import { TbSettings } from "react-icons/tb";
-import { CiCreditCard1 } from "react-icons/ci";
-import { BiSupport } from "react-icons/bi";
+import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
 import styled from "styled-components";
-import { Sidebar } from "../components/Sidebar";
-import { MdOutlineMoreVert } from "react-icons/md";
-import { useFirestore } from "../hooks/useFirestore";
-import  ThemeContext  from "../contexts/ThemeContext";
+import BlurText from "../components/BlurText";
 import PwaPrompt from "../components/PwaPrompt";
-import {messaging} from "../Firebase/firebase";
+import { Sidebar } from "../components/Sidebar";
+import { socketContext } from "../contexts/socketContext";
+import ThemeContext from "../contexts/ThemeContext";
+import { auth, generateToken, messaging } from "../Firebase/firebase";
+import { useFirestore } from "../hooks/useFirestore";
+import { GetRoomInfo } from "../hooks/useGetRoomInfo";
+import { useGetUserInfo } from "../hooks/useGetUserInfo";
+import { notifFalse, notifTrue, privFalse, privTrue } from "../hooks/useToasts";
 import { SOCKET_URL } from "../lib/config";
 
 function Home() {
@@ -109,28 +93,17 @@ function Home() {
     const savedNotifications = localStorage.getItem("notifications");
     return savedNotifications ? JSON.parse(savedNotifications) : {};
   });
-  const {isDarkMode, setIsDarkMode}=useContext(ThemeContext)
+  const { isDarkMode, setIsDarkMode } = useContext(ThemeContext);
   const {
     getRegisteredUsers,
     createGroup: createGroupDoc,
     getUserGroups,
-    sendFriendRequest,
-    acceptFriendRequest,
-    declineFriendRequest,
-    getFriendData,
-    getUsersByEmails,
   } = useFirestore();
 
-  const [users, setUsers]=useState(()=>{
-    const savedUsers=localStorage.getItem("registeredUsers")
-    return savedUsers?JSON.parse(savedUsers):[]
-  })
-
-  // Friends model (durable in Firestore, keyed by email).
-  const [friends, setFriends] = useState([]); // profile objects {email, displayName, profilePicUrl}
-  const [friendEmails, setFriendEmails] = useState([]); // emails, for quick membership checks
-  const [friendRequests, setFriendRequests] = useState([]); // incoming, profile objects
-  const [sentRequests, setSentRequests] = useState([]); // outgoing emails
+  const [users, setUsers] = useState(() => {
+    const savedUsers = localStorage.getItem("registeredUsers");
+    return savedUsers ? JSON.parse(savedUsers) : [];
+  });
 
   const quickStats = [
     { icon: <Users />, label: "Online Friends", value: "12" },
@@ -167,15 +140,12 @@ function Home() {
         }
         setPrivacyMode(!privacyMode);
       },
-    }
-    
+    },
   ];
-  
 
   const handleStatusUpdate = () => {
     socket.emit("join", {
       displayName,
-      email,
       profilePicUrl,
       status: statusMessage,
       isOnline,
@@ -191,7 +161,6 @@ function Home() {
       // Emit the updated status AFTER setting state
       socket.emit("join", {
         displayName,
-        email,
         profilePicUrl,
         status: statusMessage,
         isOnline: newStatus,
@@ -206,12 +175,12 @@ function Home() {
     setSocket(io(SOCKET_URL));
   }, []);
 
-  useEffect(()=>{
+  useEffect(() => {
     generateToken();
     onMessage(messaging, (payload) => {
       console.log("Message received. ", payload);
     });
-  },[])
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("notifications", JSON.stringify(notifications));
@@ -242,24 +211,6 @@ function Home() {
     })();
   }, [email]);
 
-  // Load the friend graph (friends + incoming requests + sent requests) and
-  // resolve emails into profile objects for rendering.
-  useEffect(() => {
-    if (!email) return;
-    (async () => {
-      const { friends: fEmails, friendRequests: reqEmails, sentRequests: sent } =
-        await getFriendData(email);
-      setFriendEmails(fEmails);
-      setSentRequests(sent);
-      const [friendProfiles, requestProfiles] = await Promise.all([
-        getUsersByEmails(fEmails),
-        getUsersByEmails(reqEmails),
-      ]);
-      setFriends(friendProfiles);
-      setFriendRequests(requestProfiles);
-    })();
-  }, [email]);
-
   useEffect(() => {
     const getUsers = async () => {
       const localUsers = localStorage.getItem("registeredUsers");
@@ -268,7 +219,7 @@ function Home() {
         setRegisteredUsers(registeredUsers);
         localStorage.setItem(
           "registeredUsers",
-          JSON.stringify(registeredUsers)
+          JSON.stringify(registeredUsers),
         );
         console.log("Registered Users Loaded");
       } else {
@@ -314,7 +265,7 @@ function Home() {
   useEffect(() => {
     if (displayName && socket) {
       setIsLoading(true);
-  
+
       const fetchUsers = async () => {
         try {
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -328,47 +279,50 @@ function Home() {
           setIsLoading(false); // Ensure loading is false after fetching
         }
       };
-  
+
       setIsOnline((prevState) => {
         const newState = localStorage.getItem("isOnline") || "online";
-  
+
         socket.emit("join", {
           displayName,
-          email,
           profilePicUrl,
           status: statusMessage,
           isOnline: newState,
         });
-  
+
         return newState;
       });
-  
+
       socket.on("onlineUsers", (users) => {
         setOnlineUsers(users);
       });
-  
+
       socket.on("message-notif", (message, username, roomId) => {
-        let roomMessages = JSON.parse(localStorage.getItem(`messages_${roomId}`)) || [];
+        let roomMessages =
+          JSON.parse(localStorage.getItem(`messages_${roomId}`)) || [];
         roomMessages.push(message);
-        localStorage.setItem(`messages_${roomId}`, JSON.stringify(roomMessages));
-  
+        localStorage.setItem(
+          `messages_${roomId}`,
+          JSON.stringify(roomMessages),
+        );
+
         setNotifications((prevNotifications) => ({
           ...prevNotifications,
           [username]: (prevNotifications[username] || 0) + 1,
         }));
       });
-  
+
       socket.on("requestJoin", ({ from, roomId }) => {
         setJoinInfo({ from, roomId });
         localStorage.setItem(from, roomId);
         setIsVisible(true);
       });
-  
+
       socket.on("groupCreated", (group) => {
         // Broadcast to everyone — only add it if I'm actually a member.
         if (group.members && email && !group.members.includes(email)) return;
         setGroups((prev) =>
-          prev.some((g) => g.id === group.id) ? prev : [...prev, group]
+          prev.some((g) => g.id === group.id) ? prev : [...prev, group],
         );
       });
 
@@ -376,28 +330,6 @@ function Home() {
         setGroups((prev) => prev.filter((g) => g.id !== groupId));
       });
 
-      // Someone sent ME a friend request (broadcast → filter by my email).
-      socket.on("friendRequest", ({ from, toEmail }) => {
-        if (!from || toEmail !== email) return;
-        setFriendRequests((prev) =>
-          prev.some((r) => r.email === from.email) ? prev : [...prev, from]
-        );
-        toast(`${from.displayName || "Someone"} sent you a friend request`);
-      });
-
-      // Someone ACCEPTED my request → we're now friends.
-      socket.on("friendAccepted", ({ by, toEmail }) => {
-        if (!by || toEmail !== email) return;
-        setFriends((prev) =>
-          prev.some((f) => f.email === by.email) ? prev : [...prev, by]
-        );
-        setFriendEmails((prev) =>
-          prev.includes(by.email) ? prev : [...prev, by.email]
-        );
-        setSentRequests((prev) => prev.filter((e) => e !== by.email));
-        toast(`${by.displayName || "Someone"} accepted your friend request`);
-      });
-  
       if (users.length === 0) {
         fetchUsers(); // Call fetchUsers only if users are empty
       } else {
@@ -405,7 +337,6 @@ function Home() {
       }
     }
   }, [displayName, socket]);
-  
 
   const handleJoinRoom = (user) => {
     const ExistRoom = GetRoomInfo(user.name);
@@ -433,56 +364,6 @@ function Home() {
     const userData = { ...group, isGroup: true };
     localStorage.setItem(`room_${roomId}`, JSON.stringify(userData));
     navigate(`/chat/${roomId}`, { state: { userData } });
-  };
-
-  //FRIENDS LOGIC
-  const handleSendFriendRequest = async (onlineUser) => {
-    if (!email || !onlineUser?.email) return;
-    // Persist durably, optimistically mark as sent, then relay live.
-    await sendFriendRequest(email, onlineUser.email);
-    setSentRequests((prev) =>
-      prev.includes(onlineUser.email) ? prev : [...prev, onlineUser.email]
-    );
-    if (socket) {
-      socket.emit("friendRequest", {
-        from: {
-          email,
-          displayName: profile.displayName,
-          profilePicUrl: profile.profilePicUrl,
-        },
-        toEmail: onlineUser.email,
-      });
-    }
-    toast(`Friend request sent to ${onlineUser.name || onlineUser.displayName}`);
-  };
-
-  const handleAcceptFriend = async (requester) => {
-    if (!email || !requester?.email) return;
-    await acceptFriendRequest(email, requester.email);
-    // Locally: move requester into friends, drop from requests.
-    setFriends((prev) =>
-      prev.some((f) => f.email === requester.email) ? prev : [...prev, requester]
-    );
-    setFriendEmails((prev) =>
-      prev.includes(requester.email) ? prev : [...prev, requester.email]
-    );
-    setFriendRequests((prev) => prev.filter((r) => r.email !== requester.email));
-    if (socket) {
-      socket.emit("friendAccepted", {
-        by: {
-          email,
-          displayName: profile.displayName,
-          profilePicUrl: profile.profilePicUrl,
-        },
-        toEmail: requester.email,
-      });
-    }
-  };
-
-  const handleDeclineFriend = async (requester) => {
-    if (!email || !requester?.email) return;
-    await declineFriendRequest(email, requester.email);
-    setFriendRequests((prev) => prev.filter((r) => r.email !== requester.email));
   };
 
   const handleSignOut = async () => {
@@ -536,7 +417,7 @@ function Home() {
         formData.append("upload_preset", "ml_default");
         const response = await axios.post(
           "https://api.cloudinary.com/v1_1/dzlr1rtln/image/upload",
-          formData
+          formData,
         );
         newPicUrl = response.data.secure_url;
       }
@@ -561,7 +442,6 @@ function Home() {
       if (socket) {
         socket.emit("join", {
           displayName: newProfile.displayName,
-          email,
           profilePicUrl: newProfile.profilePicUrl,
           status: statusMessage,
           isOnline,
@@ -603,38 +483,22 @@ function Home() {
       return;
     }
 
-    // Upload the group picture (if one was chosen) to Cloudinary.
-    let groupPicUrl = "";
-    if (groupPic) {
-      try {
-        const formData = new FormData();
-        formData.append("file", groupPic);
-        formData.append("upload_preset", "ml_default");
-        const response = await axios.post(
-          "https://api.cloudinary.com/v1_1/dzlr1rtln/image/upload",
-          formData
-        );
-        groupPicUrl = response.data.secure_url;
-      } catch (err) {
-        console.error("Error uploading group picture:", err);
-      }
-    }
-
     // Members = the selected emails + the creator, de-duped.
-    const members = Array.from(new Set([...selectedUsers, email].filter(Boolean)));
+    const members = Array.from(
+      new Set([...selectedUsers, email].filter(Boolean)),
+    );
     const group = {
       id: nanoid(),
       name: groupName.trim(),
       members,
       createdBy: email,
-      groupPicUrl,
     };
 
     // Persist durably (survives reloads, reaches offline members on next login)
     await createGroupDoc(group);
     // Optimistic local add for the creator
     setGroups((prev) =>
-      prev.some((g) => g.id === group.id) ? prev : [...prev, group]
+      prev.some((g) => g.id === group.id) ? prev : [...prev, group],
     );
     // Live relay so online members see it immediately
     if (socket) socket.emit("createGroup", group);
@@ -642,8 +506,6 @@ function Home() {
     // Close the modal and reset the state
     setIsGroupModalOpen(false);
     setGroupName("");
-    setGroupPic(null);
-    setGroupPicPreview(null);
     setSelectedUsers([]);
   };
 
@@ -656,7 +518,7 @@ function Home() {
     setSelectedUsers((prev) =>
       prev.includes(userId)
         ? prev.filter((id) => id !== userId)
-        : [...prev, userId]
+        : [...prev, userId],
     );
   };
 
@@ -671,80 +533,75 @@ function Home() {
   };
 
   return (
-    
     <div className="min-h-100dvdh flex flex-col bg-gray-100">
-  <Toaster>
-      {(t) => (
-        <div
-          className={`transition-all duration-300 ease-in-out transform ${
-            t.visible ? "opacity-85 scale-100" : "opacity-0 scale-95"
-          }  mt-3 bg-white/80 backdrop-blur-md shadow-lg text-gray-900 px-4 py-2 rounded-lg  dark:bg-gray-800/80 dark:text-gray-100 dark:border-gray-700`}
-        >
-          {resolveValue(t.message, t)}
-        </div>
-      )}
-    </Toaster>
+      <Toaster>
+        {(t) => (
+          <div
+            className={`transition-all duration-300 ease-in-out transform ${
+              t.visible ? "opacity-85 scale-100" : "opacity-0 scale-95"
+            }  mt-3 bg-white/80 backdrop-blur-md shadow-lg text-gray-900 px-4 py-2 rounded-lg  dark:bg-gray-800/80 dark:text-gray-100 dark:border-gray-700`}
+          >
+            {resolveValue(t.message, t)}
+          </div>
+        )}
+      </Toaster>
       {/* Header with Display Name and Icon */}
       <header className="dark:bg-[rgb(21,21,21)] shadow-3xl  bg- p-4 flex justify-between items-center">
         {/* Profile Section */}
         <div className=" relative flex items-center space-x-4 header-item">
-         {showProfile && (
-  <div
-    ref={profileRef}
-    className="hidden sm:block p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-gray-50 dark:bg-gray-800 shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
-  >
-    <div className="p-4 gap-2 justify-start flex flex-row items-center">
-      <img
-        src={profile.profilePicUrl}
-        alt="Profile"
-        className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-gray-300 dark:border-gray-700 shadow-sm object-cover"
-      />
-      <div className="min-w-0">
-        <h3 className="text-md sm:text-lg font-bold text-gray-800 dark:text-gray-100 truncate">
-          {profile.displayName}
-        </h3>
-        <h5 className="text-xs sm:text-sm text-gray-400 dark:text-gray-300 truncate">
-          {email || "No email"}
-        </h5>
-      </div>
-    </div>
+          {showProfile && (
+            <div
+              ref={profileRef}
+              className="hidden sm:block p-3 z-50 shadow-2xl absolute left-[-6px] top-13 mt-2 w-56 sm:w-64 bg-gray-50 dark:bg-gray-800 shadow-xl rounded-2xl overflow-hidden transform scale-95 transition-all duration-200"
+            >
+              <div className="p-4 gap-2 justify-start flex flex-row items-center">
+                <img
+                  src={profile.profilePicUrl}
+                  alt="Profile"
+                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-gray-300 dark:border-gray-700 shadow-sm object-cover"
+                />
+                <div className="min-w-0">
+                  <h3 className="text-md sm:text-lg font-bold text-gray-800 dark:text-gray-100 truncate">
+                    {profile.displayName}
+                  </h3>
+                  <h5 className="text-xs sm:text-sm text-gray-400 dark:text-gray-300 truncate">
+                    {email || "No email"}
+                  </h5>
+                </div>
+              </div>
 
-    <div className="border-t border-gray-300 dark:border-gray-700">
-      <button
-        onClick={openProfileModal}
-        className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
-      >
-        <AiOutlineUser /> Edit Profile
-      </button>
-      <button
-        onClick={openSettingsModal}
-        className="cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
-      >
-        <TbSettings /> Settings
-      </button>
-      <div className="mt-1 border-t border-gray-300 dark:border-gray-700">
-        <button
-          className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
-        >
-          <CiCreditCard1 /> Subscription
-        </button>
-        <button
-          className="cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
-        >
-          <BiSupport /> Support
-        </button>
-      </div>
-      <div className="mt-1 border-t border-gray-300 dark:border-gray-700">
-        <button
-          className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900 flex items-center transition duration-300"
-          onClick={handleSignOut}
-        >
-          <RxExit /> Sign Out
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+              <div className="border-t border-gray-300 dark:border-gray-700">
+                <button
+                  onClick={openProfileModal}
+                  className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
+                >
+                  <AiOutlineUser /> Edit Profile
+                </button>
+                <button
+                  onClick={openSettingsModal}
+                  className="cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300"
+                >
+                  <TbSettings /> Settings
+                </button>
+                <div className="mt-1 border-t border-gray-300 dark:border-gray-700">
+                  <button className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300">
+                    <CiCreditCard1 /> Subscription
+                  </button>
+                  <button className="cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 flex items-center transition duration-300">
+                    <BiSupport /> Support
+                  </button>
+                </div>
+                <div className="mt-1 border-t border-gray-300 dark:border-gray-700">
+                  <button
+                    className="mt-1 cursor-pointer gap-4 flex justify-start w-full rounded-xl px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900 flex items-center transition duration-300"
+                    onClick={handleSignOut}
+                  >
+                    <RxExit /> Sign Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Avatar trigger */}
           <button
@@ -760,16 +617,13 @@ function Home() {
 
           {/* Display Name */}
           <div>
-
-          <BlurText
-  text="TetherChat"
-  delay={50}
-  animateBy="letters"
-  direction="top"
-  className="dark:text-white text-3xl sm:text-4xl font-bold text-black "
-/>
-
-
+            <BlurText
+              text="TetherChat"
+              delay={50}
+              animateBy="letters"
+              direction="top"
+              className="dark:text-white text-3xl sm:text-4xl font-bold text-black "
+            />
           </div>
         </div>
 
@@ -1088,18 +942,10 @@ function Home() {
             notif={notif}
             notifications={notifications}
             displayName={displayName}
-            email={email}
             onlineUsers={onlineUsers}
             groups={groups}
-            friends={friends}
-            friendEmails={friendEmails}
-            sentRequests={sentRequests}
-            friendRequests={friendRequests}
             handleJoinRoom={handleJoinRoom}
             handleJoinGroup={handleJoinGroup}
-            handleSendFriendRequest={handleSendFriendRequest}
-            handleAcceptFriend={handleAcceptFriend}
-            handleDeclineFriend={handleDeclineFriend}
             registeredUsers={registeredUsers}
           />
           <div
@@ -1120,7 +966,7 @@ function Home() {
                     isDarkMode ? "text-white" : "text-gray-800"
                   }`}
                 >
-                  Welcome to the Chat App!
+                  Welcome to TetherChat!
                 </h2>
                 <p
                   className={`text-lg max-w-md mx-auto ${
@@ -1173,8 +1019,8 @@ function Home() {
                             isOnline === "online"
                               ? "bg-green-100 text-green-600"
                               : isDarkMode
-                              ? "bg-gray-700 text-gray-300"
-                              : "bg-gray-100 text-gray-600"
+                                ? "bg-gray-700 text-gray-300"
+                                : "bg-gray-100 text-gray-600"
                           }`}
                         >
                           {isOnline === "online" ? (
@@ -1286,7 +1132,6 @@ function Home() {
                       </div>
                     </div>
                   </div>
-
                 </div>
 
                 {/* Quick Stats */}
@@ -1340,7 +1185,6 @@ function Home() {
           New Chat
         </span>
       </button>
-
 
       {isUserModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-30 dark:bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1444,46 +1288,15 @@ function Home() {
             </div>
 
             <div className="p-6">
-              {/* Group picture + name */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="relative flex-shrink-0">
-                  {groupPicPreview ? (
-                    <img
-                      src={groupPicPreview}
-                      alt="Group"
-                      className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-blue-500 text-white flex items-center justify-center text-2xl font-bold">
-                      {groupName.trim()?.[0]?.toUpperCase() || <Users className="w-7 h-7" />}
-                    </div>
-                  )}
-                  <label className="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-full cursor-pointer shadow-md transition">
-                    <Camera className="w-3.5 h-3.5" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                          setGroupPic(file);
-                          setGroupPicPreview(URL.createObjectURL(file));
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Group Name"
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  className="flex-1 p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 rounded-lg
-                  focus:ring-2 focus:ring-blue-500 focus:outline-none transition
-                  text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="Group Name"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 rounded-lg mb-4 
+                focus:ring-2 focus:ring-blue-500 focus:outline-none transition
+                text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+              />
 
               <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-200">
                 Select Group Members
@@ -1494,22 +1307,19 @@ function Home() {
                 scrollbar-thin scrollbar-thumb-blue-300 scrollbar-track-blue-100
                 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800"
               >
-                {/* Group members can only be picked from your friends. */}
-                {friends.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">
-                    You have no friends yet. Add friends from the Online Users
-                    list to invite them to a group.
-                  </p>
-                ) : (
-                  friends.map((user) => (
+                {/* Pick members from registered users (they carry an email,
+                    which is how group membership is stored durably). */}
+                {users
+                  .filter((user) => user.email && user.email !== email)
+                  .map((user) => (
                     <div
                       key={user.email}
                       className={`flex items-center p-2 rounded-lg cursor-pointer transition
-                      ${
-                        selectedUsers.includes(user.email)
-                          ? "bg-blue-100 dark:bg-blue-900 dark:text-gray-100"
-                          : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
-                      }`}
+                    ${
+                      selectedUsers.includes(user.email)
+                        ? "bg-blue-100 dark:bg-blue-900 dark:text-gray-100"
+                        : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+                    }`}
                       onClick={() => handleUserSelection(user.email)}
                     >
                       <img
@@ -1517,24 +1327,21 @@ function Home() {
                         alt={user.displayName}
                         className="w-10 h-10 rounded-full mr-3 border-2 border-white dark:border-gray-700 shadow-sm"
                       />
-                      <span className="font-medium flex-grow">{user.displayName}</span>
+                      <span className="font-medium flex-grow">
+                        {user.displayName}
+                      </span>
                       {selectedUsers.includes(user.email) && (
                         <span className="text-blue-600 dark:text-blue-400">
                           <Check className="w-5 h-5" />
                         </span>
                       )}
                     </div>
-                  ))
-                )}
+                  ))}
               </div>
 
               <div className="flex justify-between sm:justify-end space-x-3 pt-2">
                 <button
-                  onClick={() => {
-                    setIsGroupModalOpen(false);
-                    setGroupPic(null);
-                    setGroupPicPreview(null);
-                  }}
+                  onClick={() => setIsGroupModalOpen(false)}
                   className="cursor-pointer px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
                 >
                   Cancel
@@ -1640,7 +1447,10 @@ function Home() {
                   type="text"
                   value={editProfile.displayName}
                   onChange={(e) =>
-                    setEditProfile({ ...editProfile, displayName: e.target.value })
+                    setEditProfile({
+                      ...editProfile,
+                      displayName: e.target.value,
+                    })
                   }
                   placeholder="Your name"
                   className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:outline-none transition"
@@ -1825,8 +1635,7 @@ function Home() {
         </div>
       )}
 
-      <PwaPrompt/>
-
+      <PwaPrompt />
     </div>
   );
 }
@@ -1888,7 +1697,9 @@ const StyledWrapper = styled.div`
     );
     background: #303136;
     /* change the value of second inset in box-shadow to change the angle and direction of the moon  */
-    box-shadow: inset -3px -2px 5px -2px #8983f7, inset -10px -4px 0 0 #a3dafb;
+    box-shadow:
+      inset -3px -2px 5px -2px #8983f7,
+      inset -10px -4px 0 0 #a3dafb;
   }
 `;
 

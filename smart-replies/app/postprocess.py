@@ -48,15 +48,12 @@ def jaccard(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
-def dedupe(candidates: list[str], threshold: float = 0.6) -> list[str]:
+SIMILARITY_THRESHOLD = 0.6
+
+
+def dedupe(candidates: list[str], threshold: float = SIMILARITY_THRESHOLD) -> list[str]:
     kept: list[str] = []
     for c in candidates:
         if all(jaccard(c, k) < threshold for k in kept):
             kept.append(c)
     return kept
-
-
-def clean_candidates(raw: list[str], n: int) -> list[str]:
-    cleaned = [detokenize(r) for r in raw]
-    cleaned = [c for c in cleaned if is_acceptable(c)]
-    return dedupe(cleaned)[:n]

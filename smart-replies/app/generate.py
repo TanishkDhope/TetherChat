@@ -7,6 +7,8 @@ import os
 import threading
 from pathlib import Path
 
+from .postprocess import SIMILARITY_THRESHOLD, detokenize, is_acceptable, jaccard
+
 log = logging.getLogger("smart-replies")
 
 MODEL_REPO = os.environ.get("MODEL_REPO", "TanishkDhope/tetherchat-smart-replies")
@@ -60,16 +62,25 @@ class Generator:
         return self._llm is not None
 
     def candidates(self, prompt: str, n: int) -> list[str]:
-        """One greedy completion plus `n + EXTRA_CANDIDATES` sampled ones.
+        """Generate up to `n` distinct candidate replies with early stopping.
         llama.cpp reuses the KV cache for the shared prompt prefix, so only
         the first call pays the prompt-eval cost."""
         assert self._llm is not None, "model not loaded"
-        outs: list[str] = []
+        kept: list[str] = []
         with self._lock:
-            outs.append(self._complete(prompt, temperature=0.0))
-            for _ in range(n + EXTRA_CANDIDATES):
-                outs.append(self._complete(prompt, **SAMPLING))
-        return outs
+            greedy = detokenize(self._complete(prompt, temperature=0.0))
+            if is_acceptable(greedy):
+                kept.append(greedy)
+            if len(kept) < n:
+                for _ in range(n + EXTRA_CANDIDATES):
+                    sampled = detokenize(self._complete(prompt, **SAMPLING))
+                    if is_acceptable(sampled) and all(
+                        jaccard(sampled, k) < SIMILARITY_THRESHOLD for k in kept
+                    ):
+                        kept.append(sampled)
+                        if len(kept) == n:
+                            break
+        return kept
 
     def _complete(self, prompt: str, **sampling) -> str:
         res = self._llm(prompt, max_tokens=MAX_TOKENS, stop=STOP, **sampling)
