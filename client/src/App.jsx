@@ -6,8 +6,14 @@ import Home from "./pages/Home";
 import Chat from "./pages/Chat";
 import Videocall from "./pages/video-call";
 import { AuthProvider } from "./contexts/AuthContext";
+import { IS_MAINTENANCE } from "./lib/config";
+import MaintenanceGate from "./components/MaintenanceGate";
 
 function App() {
+  if (IS_MAINTENANCE) {
+    return <MaintenanceGate />;
+  }
+
   return (
     <AuthProvider>
       <Routes>

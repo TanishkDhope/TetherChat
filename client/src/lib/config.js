@@ -8,3 +8,6 @@ export const SOCKET_URL =
 // REST API base. Same origin as the socket server unless overridden.
 export const API_URL =
   import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+// Maintenance gate flag ("1" indicates active maintenance)
+export const IS_MAINTENANCE = import.meta.env.VITE_MAINTENANCE === "1";

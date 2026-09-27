@@ -19,3 +19,4 @@ server/serviceAccountKey.json
 server/serviceAccountKey.b64
 output/screenshots/
 server/scripts/migrate/out/
+firebase-debug.log
