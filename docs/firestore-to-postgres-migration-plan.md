@@ -1,6 +1,6 @@
 # TetherChat — Firestore → PostgreSQL Migration Plan
 
-**Status:** Phase 0a, 0b & 0c Complete (Server Foundation, Client Migration, and Staging Live on Render + Vercel) · Phase 1 Pending · **Date:** 2026-09-27 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
+**Status:** Phase 0a, 0b, 0c & Phase 1 Complete (Server Foundation, Client Migration, Staging Live on Render + Vercel, Announce & Freeze Live) · Phase 2 Pending · **Date:** 2026-09-27 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
 
 > [!NOTE]
 > **Migration Posture:** Strict **no-backup, no-rollback posture** for personal project with non-critical data. No cloud export will be taken, no recoverable copy of Firestore data will be retained, and the 7-day bake period (Phase 5) is **SKIPPED BY DESIGN** — no rollback path is intended. Postgres becomes the sole source of truth immediately after verified cutover.
@@ -55,7 +55,7 @@
 | ORM | **Prisma** | Schema-first, built-in migrations, works in plain-JS ESM (the repo is untyped). |
 | Auth | **Keep Firebase Auth** | Smallest blast radius. `firebase-admin` verifies ID tokens on REST and on Socket.IO handshake. Supports Firebase emulator in local development and service account JSON in production (Render). |
 | Hosting | **Neon PostgreSQL** | Server connects via Neon pooled connection string (`DATABASE_URL` with `&pgbouncer=true`) and direct unpooled connection (`DIRECT_URL`) for migrations. |
-| Phasing | **Phase 0a/0b/0c complete** | Schema, migrations, Express REST/Socket API, client data hooks, and staging deployment on Render + Vercel complete. |
+| Phasing | **Phase 0a/0b/0c & Phase 1 complete** | Schema, migrations, Express REST/Socket API, client data hooks, staging deployment, and Phase 1 write freeze complete. |
 | Cutover style | **Single maintenance window (no-backup, no-rollback)** | User base is small/personal; zero recoverable copy retained; Firestore decommissioned immediately post-verify. |
 | Read receipts | `conversation_members.last_read_message_id` cursor rather than a per-message receipts table | One integer per member per conversation instead of one row per message per member. |
 | Moderation | `is_moderated` boolean + optional `moderation_reason` on `messages` table | Explicit schema support for the Jev AI content moderation system (`server/src/services/moderation.js`). |
@@ -680,7 +680,7 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 | **0a · Server foundation** | Prisma schema + migrations on Neon, `db.js`, `firebase.js`, `auth.js`, all REST routes, `realtime.js`, seed scripts (`prisma/seed.js` + `scripts/seed-auth.js`), `GET /healthz`. NO client changes. | Smoke checklist passes **LOCALLY** with seeded data (via `scripts/seed-auth.js` + `prisma/seed.js`). Server is curl-testable end-to-end. | **COMPLETED** (D8 verification passed: all 11 HTTP checks + socket/REST shape consistency verified) |
 | **0b · Client migration** | `api.js`, `useApi.js`, hook rewrites, `Home.jsx`, `Chat.jsx`, `video-call.jsx`, `Sidebar.jsx`, `firebase.js` cleanup. | Verified against local server + local client + Firebase Auth emulator. Zero Firestore/cache references. Clean build. | **COMPLETED** (Zero `firebase/firestore`, zero `localStorage` caches, 1 Socket.IO instance, Vite build passed) |
 | **0c · Staging deployment** | Deploy 0a+0b to staging Render web service connected to Neon staging branch, with Vercel preview deployment pointing at it. | Staging live on Render and Vercel. | **COMPLETED** (staging live on Render + Vercel) |
-| **1 · Announce & freeze** | Tag repo as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Set Firestore rules to `allow write: if false;`. Verify zero Firestore writes for 5 min. | Zero writes for 5 minutes. | **PENDING** |
+| **1 · Announce & freeze** | Tag repo as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Set Firestore rules to `allow write: if false;`. Verify zero Firestore writes for 5 min. | Zero writes for 5 minutes verified. | **COMPLETED** (Tag `pre-postgres` pushed, Vercel maintenance live at `https://tetherchat.vercel.app`, rules deployed, zero writes verified) |
 | **2 · Migrate** | ETL (`extract.js`, `transform.js`, `load.js`, `verify.js`) against production Neon. `verify.js` is sole checkpoint. | All hard gates in 4.4 green; `migration_log` non-ok rows reviewed and accepted. | **PENDING** |
 | **3 · Deploy** | Confirm prod env vars on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`). Run `prisma migrate deploy` on prod Neon. Deploy server (verify `/healthz`). Deploy client with `VITE_MAINTENANCE=0`. | Health check `GET /healthz` returns DB round-trip OK (Render health check targets `/healthz`). | **PENDING** |
 | **4 · Smoke** | Two accounts: send DM, verify in Postgres; verify one group, one friend request. | All pass. | **PENDING** |
@@ -688,7 +688,7 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 | **6 · Decommission** | Delete Firestore collections via Firebase CLI (`firebase firestore:delete --all-collections`) or Console UI. NO export. NO GCS backup. NO retention. Drop temporary `migration_log` table from Postgres. Clean up legacy Firestore code branches. | Firestore collections deleted; `migration_log` dropped. | **PENDING** |
 
 > [!NOTE]
-> **Phasing Gate:** Phases 0a, 0b, and 0c are complete. The next action is Phase 1 (Announce & Freeze) followed by Phase 2 (ETL execution with `verify.js` as the sole checkpoint).
+> **Phasing Gate:** Phases 0a, 0b, 0c, and 1 are complete. The next action is Phase 2 (ETL execution with `verify.js` as the sole checkpoint).
 
 ### 6.2 Smoke checklist (production)
 
@@ -835,11 +835,11 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
   - [x] Deploy server to staging Render Web Service connected to Neon staging branch
   - [x] Deploy client to Vercel preview deployment pointing to staging Render
   - [x] Verify staging environment live on Render and Vercel
-- [ ] **Phase 1 · Announce & Freeze**:
-  - [ ] Tag repo as `pre-postgres`
-  - [ ] Deploy client with `VITE_MAINTENANCE=1`
-  - [ ] Set Firestore rules to `allow write: if false;`
-  - [ ] Verify zero Firestore writes for 5 min (`T_freeze`)
+- [x] **Phase 1 · Announce & Freeze (COMPLETE — 2026-09-27)**:
+  - [x] Tag repo as `pre-postgres` (pushed to `origin`)
+  - [x] Deploy client with `VITE_MAINTENANCE=1` (live at `https://tetherchat.vercel.app`)
+  - [x] Set Firestore rules to `allow write: if false;` (verified returning 403 PERMISSION_DENIED)
+  - [x] Verify zero Firestore writes for 5 min (`T_freeze` window verified with 0 write delta)
 - [ ] **Phase 2 · Data Migration (ETL)**:
   - [ ] Implement `server/scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js` (DO NOT implement `reverse-etl.js` — no rollback)
   - [ ] Skip `overrides.csv` unless ambiguous chat keys surface during dry run
@@ -925,6 +925,23 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 - **Client Staging**: Deployed to Vercel preview deployment pointing `VITE_API_URL` to staging Render.
 - **Staging Verification**: Staging environment live on Render + Vercel.
 
+#### 4. Announce & Freeze (Phase 1) — COMPLETE
+- **Repository Tagging:** Annotated git tag `pre-postgres` created at commit `8320d67` and pushed to `origin/pre-postgres`.
+- **Client Maintenance Gate:**
+  - Implemented `client/src/components/MaintenanceGate.jsx` rendering full-screen static maintenance UI ("Scheduled Maintenance" / "We'll be back shortly").
+  - `client/src/App.jsx` evaluates `IS_MAINTENANCE` before mounting `AuthProvider` or any routing components, guaranteeing zero network traffic, zero Firestore queries, and zero Socket.IO connections.
+  - Configured `VITE_MAINTENANCE=1` in `client/.env.production` and whitelisted `.env.production` in `.gitignore`.
+  - Deployed to Vercel production at `https://tetherchat.vercel.app` (verified active via HTTP 200 and bundle analysis).
+- **Firestore Lockdown:**
+  - Deployed `firestore.rules` with `allow read: if true; allow write: if false;` to Firebase project `connectly-9d39a`.
+  - Verified write lockdown via REST probe: attempts to write return HTTP `403 PERMISSION_DENIED`. Verified reads remain accessible (`HTTP 200`).
+- **Freeze Window ($T_{freeze}$) & Zero-Write Verification:**
+  - Rules deployment active: `2026-09-27T04:30:40Z` (`10:00:40 IST`).
+  - Production client maintenance active: `2026-09-27T04:56:38Z` (`10:26:38 IST`).
+  - Verification window: `2026-09-27T04:52:00Z` to `2026-09-27T04:58:00Z` (10:22:00 IST – 10:28:00 IST).
+  - Firestore audit: 60 documents across 5 collections (`chats`: 29, `users`: 27, `fcmTokens`: 2, `groups`: 1, `registered`: 1). Latest document update timestamp: `2026-09-20T10:23:47Z`.
+  - Write-count delta: **0 writes**.
+
 ---
 
 ### 10.2 Remaining work roadmap (no-rollback posture)
@@ -936,23 +953,22 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 [Phase 0a: Server Foundation] ──> COMPLETE
 [Phase 0b: Client Migration]  ──> COMPLETE
 [Phase 0c: Staging Deployed]  ──> COMPLETE (Render + Vercel)
-             │
-             └──> [Phase 1: Announce & Freeze] (Git tag 'pre-postgres', VITE_MAINTENANCE=1, rules lock)
-                    │
-                    └──> [Phase 2: Data Migration (ETL)] (extract.js, transform.js, load.js, verify.js, 1 rehearsal)
-                           │
-                           └──> [Phase 3: Production Cutover] (prisma migrate deploy, Render deploy, Vercel deploy)
-                                  │
-                                  └──> [Phase 4: Smoke Testing] (Two accounts: DM, group, friend request)
-                                         │
-                                         └──> [Phase 5: SKIPPED] (No bake period, no rollback)
-                                                │
-                                                └──> [Phase 6: Decommission] (firebase firestore:delete, drop migration_log)
+[Phase 1: Announce & Freeze]  ──> COMPLETE (pre-postgres tag, rules lock, maintenance gate live)
+              │
+              └──> [Phase 2: Data Migration (ETL)] (extract.js, transform.js, load.js, verify.js, 1 rehearsal)
+                     │
+                     └──> [Phase 3: Production Cutover] (prisma migrate deploy, Render deploy, Vercel deploy)
+                            │
+                            └──> [Phase 4: Smoke Testing] (Two accounts: DM, group, friend request)
+                                   │
+                                   └──> [Phase 5: SKIPPED] (No bake period, no rollback)
+                                          │
+                                          └──> [Phase 6: Decommission] (firebase firestore:delete, drop migration_log)
 ```
 
 | Phase | Milestone | Deliverables / Actions Required |
 |---|---|---|
-| **Phase 1** | **Announce & Freeze** | 1. Tag repo as `pre-postgres`.<br>2. Deploy client with `VITE_MAINTENANCE=1`.<br>3. Set Firestore rules to `allow write: if false;`.<br>4. Verify zero Firestore writes for 5 min. |
+| **Phase 1** | **Announce & Freeze** | **COMPLETED.** Tag `pre-postgres` pushed. Maintenance gate live at `https://tetherchat.vercel.app`. Firestore writes locked. 0 writes verified. |
 | **Phase 2** | **Data Migration (ETL)** | 1. Implement `server/scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js`.<br>   **DO NOT** implement `reverse-etl.js` — no rollback.<br>2. Skip `overrides.csv` unless ambiguous chat keys surface during dry run.<br>3. Run ONE rehearsal against staging Neon + Render.<br>4. Run ETL against production Neon.<br>5. Run `verify.js` — must be all green before proceeding. This is the **ONLY** checkpoint. |
 | **Phase 3** | **Production Cutover** | 1. Confirm prod env vars on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`).<br>2. `npx prisma migrate deploy` on prod Neon.<br>3. Deploy server; verify `GET /healthz` returns HTTP 200 `{ ok: true, mode: "prod", db: "up" }`.<br>4. Deploy client with `VITE_MAINTENANCE=0`. |
 | **Phase 4** | **Production Smoke Testing** | 1. Two accounts: send DM, verify in Postgres.<br>2. Verify one group, one friend request. |
