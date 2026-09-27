@@ -1,6 +1,6 @@
 # TetherChat — Firestore → PostgreSQL Migration Plan
 
-**Status:** refined / approved (Phase 0 active) · **Date:** 2026-09-26 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
+**Status:** Phase 0a & 0b Complete (Server Foundation & Client Migration Verified) · Phase 0c/Phase 1 Pending · **Date:** 2026-09-27 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
 
 ---
 
@@ -16,6 +16,7 @@
 7. [Rollback / fallback strategy](#7-rollback--fallback-strategy)
 8. [Flaws resolved by this migration](#8-flaws-resolved-by-this-migration)
 9. [Risks, open questions, checklist](#9-risks-open-questions-checklist)
+10. [Implementation status & remaining work roadmap](#10-implementation-status--remaining-work-roadmap)
 
 ---
 
@@ -482,14 +483,17 @@ New layout:
 server/
   prisma/schema.prisma, prisma/migrations/0001_init/migration.sql, prisma/seed.js
   src/db.js            # PrismaClient singleton, BigInt → string JSON replacer
+  src/firebase.js      # dual-mode Firebase Admin SDK init (emulator vs service account)
   src/auth.js          # verifyFirebaseToken (Express middleware) + socketAuth (io.use) [emulator & service-account aware]
   src/routes/me.js     # GET /me, POST /me/sync, PATCH /me
   src/routes/users.js  # GET /users/search?q=
   src/routes/friends.js
   src/routes/conversations.js  # incl. /:id/messages
+  src/routes/health.js         # GET /healthz (Render health check)
   src/routes/suggestReplies.js # protected with verifyFirebaseToken
   src/realtime.js      # Socket.IO handlers (presence, rooms, messages, typing, signalling)
   src/services/*.js    # transactions (below) & moderation.js
+  scripts/seed-auth.js # emulator-only auth seeding with deterministic UIDs
   scripts/migrate/{extract,transform,load,verify,reverse-etl}.js
   server.js            # bootstrap only
 ```
@@ -502,24 +506,77 @@ server/
 | `socket.on("join", {displayName, email, …})` trusts the payload (`:35-49`) | `io.use(socketAuth)` verifies `handshake.auth.token`; `socket.data.uid` set once; `join` event removed. |
 | `io.emit("onlineUsers", fullList)` on every change (`:43, 48, 152`) | `presence:online {uid}` / `presence:offline {uid}` diff events to the user's **friends only**; `GET /me/friends` returns `online` flags from the Map. |
 | `joinRoom` by display name (`:76-105`) | `join-conversation {id}` → membership check → `socket.join`. |
-| `send-message` relays unpersisted (`:145-147`) | toxicity check via `moderation.js` → insert via `messageService.send()` (persisting `is_moderated`, `moderation_reason`) → emit stored row to the room. |
+| `send-message` relays unpersisted (`:145-147`) | pre-flight toxicity check via `moderation.js` (outside transaction) → insert via `messageService.send()` → emit stored row to the room. |
 | `friendRequest`/`friendAccepted`/`createGroup`/`deleteGroup` broadcast (`:56-72`) | emitted by the REST handlers to `user:<uid>` rooms only. |
 | `disconnect` → `broadcast.emit("hangup")` (`:159`) | `hangup` only to conversations in `socket.data.activeCalls`. |
 | `offer/answer/ice-candidate` broadcast (`:181-192`) | `socket.to("conversation:<id>").emit(...)`, payload includes `conversationId`. |
 | `cors({ origin: "*" })` (`:20-26`) | `origin: process.env.CORS_ORIGIN.split(",")`. |
 
-Environment: `DATABASE_URL` (Neon pooled with `&pgbouncer=true`), `DIRECT_URL` (Neon unpooled host for migrations), `FIREBASE_SERVICE_ACCOUNT` (base64 JSON on Render), `FIREBASE_AUTH_EMULATOR_HOST` (local dev/test), `CORS_ORIGIN`, `PORT`. Dependencies added: `@prisma/client`, `prisma` (dev), `firebase-admin`, `zod` (payload validation). `nodemon` moves to devDependencies; `start` becomes `node server.js`.
+**Environment variables:**
+
+- `DATABASE_URL` — Neon pooled connection string (must include `&pgbouncer=true`).
+- `DIRECT_URL` — Neon direct connection string, no pooler (used for `prisma migrate` only).
+- `FIREBASE_PROJECT_ID` — Required in BOTH emulator and production modes. (The Firebase Admin SDK in emulator mode needs an explicit project ID because the emulator has no service account to derive it from.)
+- `FIREBASE_SERVICE_ACCOUNT` — Base64 JSON of the service account key. Production only — NEVER set locally.
+- `FIREBASE_AUTH_EMULATOR_HOST` — Host/port for Firebase Auth emulator (e.g. `localhost:9099`). Local/test only — NEVER set on Render.
+- `CORS_ORIGIN` — Comma-separated list of allowed origins (e.g. `http://localhost:5173`).
+- `PORT` — Server listening port (default `4000` locally, assigned by Render in production).
+
+> [!WARNING]
+> `pgbouncer=true` is REQUIRED for Neon pooled connections. It disables Prisma's prepared statements (PgBouncer in transaction mode cannot route them). Do NOT remove this flag to silence "prepared statement" warnings — everything will work locally and break under concurrent load on Render.
+
+Dependencies added: `@prisma/client`, `firebase-admin`, `zod` (payload validation). DevDependencies: `prisma`. `nodemon` moves to devDependencies; `start` becomes `node server.js`.
+
+**Health check (`GET /healthz`):**
+- Mounted BEFORE the auth middleware. It must never require a token — Render's health check hits it before any user request arrives.
+- Performs `await prisma.$queryRaw`SELECT 1`` to verify DB connectivity.
+- Locked response shape (200 on success, 503 on DB error):
+  ```json
+  {
+    "ok": true,
+    "mode": "emulator",
+    "db": "up",
+    "uptime": 12.34,
+    "timestamp": "2026-09-26T16:45:00.000Z"
+  }
+  ```
+
+**Runtime:**
+- `engines: { "node": ">=20.0.0" }` in `server/package.json`
+- `.nvmrc` containing `"20"` in `server/`
+- `NODE_VERSION=20` to Render environment variables
+
+**Environment setup & Gitignore:**
+
+Obtaining the base64 service account for Render:
+```bash
+base64 -i serviceAccountKey.json | tr -d '\n' > serviceAccountKey.b64
+# Paste the contents of serviceAccountKey.b64 into Render's env var FIREBASE_SERVICE_ACCOUNT. Never commit either file.
+```
+
+`.gitignore` entries (required):
+```gitignore
+server/.env
+server/.env.local
+server/serviceAccountKey.json
+server/serviceAccountKey.b64
+output/screenshots/
+server/scripts/migrate/out/
+```
 
 **Transactions (`src/services/`)**
 
-| Operation | Statements inside one `prisma.$transaction` |
+| Operation | Implementation & Statements |
 |---|---|
-| `friends.accept(me, other)` | `UPDATE friendships SET status='accepted', responded_at=now() WHERE (user_lo,user_hi)=(…) AND status='pending' AND requested_by=other` (must affect 1 row) → `INSERT INTO conversations (kind,dm_key) VALUES ('dm', lo||':'||hi) ON CONFLICT (dm_key) DO NOTHING` → `INSERT INTO conversation_members … ON CONFLICT DO NOTHING` ×2. |
-| `friends.request(me, other)` | validate `me <> other` and both exist → `INSERT INTO friendships … ON CONFLICT (user_lo,user_hi) DO NOTHING` (0 rows → 409 already-pending/friends). |
-| `conversations.createGroup(me, dto)` | `INSERT conversations` → `INSERT conversation_members` for `{me: owner} ∪ members` — members must be accepted friends of `me` (`WHERE EXISTS friendships accepted`) or the transaction aborts. |
+| `friends.accept(me, other)` | In one `prisma.$transaction`: `UPDATE friendships SET status='accepted', responded_at=now() WHERE (user_lo,user_hi)=(…) AND status='pending' AND requested_by=other` (must affect 1 row) → `INSERT INTO conversations (kind,dm_key) VALUES ('dm', lo||':'||hi) ON CONFLICT (dm_key) DO NOTHING` → `INSERT INTO conversation_members … ON CONFLICT DO NOTHING` ×2. |
+| `friends.request(me, other)` | Validate `me <> other` and both exist → `INSERT INTO friendships … ON CONFLICT (user_lo,user_hi) DO NOTHING` (0 rows → 409 already-pending/friends). |
+| `conversations.createGroup(me, dto)` | In one `prisma.$transaction`: `INSERT conversations` → `INSERT conversation_members` for `{me: owner} ∪ members` — members must be accepted friends of `me` (`WHERE EXISTS friendships accepted`) or the transaction aborts. |
 | `conversations.deleteGroup(me, id)` | `DELETE FROM conversations WHERE id=$1 AND kind='group' AND EXISTS (SELECT 1 FROM conversation_members WHERE conversation_id=$1 AND user_id=$2 AND role='owner')` — cascade removes members + messages. |
-| `messages.send(me, dto)` | membership check → toxicity classification via `moderation.js` → `INSERT INTO messages (conversation_id, sender_id, client_msg_id, kind, body, is_moderated, moderation_reason) … ON CONFLICT (conversation_id, sender_id, client_msg_id) DO NOTHING RETURNING *` → `UPDATE conversations SET updated_at = now()` → `UPDATE conversation_members SET last_read_message_id = <new id> WHERE user_id = me`. |
+| `messages.send(me, dto)` | **1. Pre-flight (outside transaction):**<br>a. Membership check — `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`<br>b. Moderation call via `moderation.js` (existing 2s timeout, 3-tier fallback) → returns `{ isModerated, moderationReason }` synchronously.<br>**2. Single transaction (short-lived, no external I/O):**<br>a. `INSERT INTO messages (conversation_id, sender_id, client_msg_id, kind, body, is_moderated, moderation_reason) ON CONFLICT (conversation_id, sender_id, client_msg_id) DO NOTHING RETURNING *`<br>b. `UPDATE conversations SET updated_at = now() WHERE id = ...`<br>c. `UPDATE conversation_members SET last_read_message_id = <new id> WHERE conversation_id = ... AND user_id = me`<br>**3. After commit:** `io.to("conversation:<id>").emit("message", row)` |
 | `messages.markRead(me, conv, msgId)` | `UPDATE conversation_members SET last_read_message_id = GREATEST(COALESCE(last_read_message_id,0), $msgId) WHERE …` — monotonic. |
+
+> [!IMPORTANT]
+> **Why moderation is hoisted outside the transaction:** Moderation makes an external HTTP call to Jev AI with an up to 2-second timeout. Holding a Postgres transaction open during external HTTP calls exhausts the Neon / PgBouncer connection pool and causes transaction timeouts under concurrent load on Render. Future implementers must never inline moderation into the database transaction!
 
 **Query catalogue**
 
@@ -545,6 +602,10 @@ WHERE m.conversation_id = $1 AND ($2::bigint IS NULL OR m.id < $2)
 ORDER BY m.id DESC LIMIT 50;
 
 -- Friends + pending, one query
+-- blocked friendships are silently excluded from /me/friends in v1. There is no UI 
+-- for blocking or unblocking; the enum value exists only for future-proofing. Note 
+-- that requested_by is ambiguous for a blocked row (either party could have initiated 
+-- the block) — resolve this when the UI is built.
 SELECT f.*, CASE WHEN f.user_lo = $1 THEN f.user_hi ELSE f.user_lo END AS other_id,
        CASE WHEN f.status='accepted' THEN 'friend'
             WHEN f.requested_by = $1 THEN 'sent' ELSE 'received' END AS relation
@@ -573,7 +634,7 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 |---|---|
 | `src/lib/config.js` | add `API_URL` (`VITE_API_URL`, defaults to `SOCKET_URL`). |
 | `src/lib/api.js` (new) | `apiFetch(path, opts)` → attaches `Authorization: Bearer ${await auth.currentUser.getIdToken()}`, JSON in/out, throws on non-2xx. |
-| `src/hooks/useFirestore.js` → `src/hooks/useApi.js` | Same exported names so call sites barely change: `getMessages(conversationId, before)`, `createGroup`, `getUserGroups` → `getConversations`, `deleteGroup`, `sendFriendRequest`, `acceptFriendRequest`, `declineFriendRequest`, `getFriendData`, `getUsersByEmails` → `searchUsers`. `storeMessages`, `getRegisteredUsers`, `addRegisteredUser` are deleted. |
+| `src/hooks/useFirestore.js` → `src/hooks/useApi.js` | `useApi.js` replaces `useFirestore.js` with a new API surface. Call sites in `Home.jsx` and `Chat.jsx` MUST be rewritten regardless — the "same names" trick does not avoid the client rewrite, it only eases grep-replace for the trivial cases. Functions: `getMessages(conversationId, before)`, `createGroup`, `getConversations` (includes DMs and groups), `deleteGroup`, `sendFriendRequest`, `acceptFriendRequest`, `declineFriendRequest`, `getFriendData`, `searchUsers`. `storeMessages`, `getRegisteredUsers`, `addRegisteredUser` are deleted. |
 | `src/hooks/useAddUser.js` | `addUser()` → `POST /me/sync`. Called once after Firebase sign-in; the server takes email from the token, never from the body. |
 | `src/hooks/useGetUsername.js` | `getUsername()` → `GET /me`. |
 | `src/hooks/useGetUserInfo.js` | Reads Firebase `auth.currentUser` (via `onAuthStateChanged` in a provider) instead of `localStorage["auth-info"]`; exposes `uid`. |
@@ -607,15 +668,20 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 
 ### 6.1 Phases (recommended — single window)
 
-| Phase | What | Exit criteria |
-|---|---|---|
-| **0 · Build** | Server routes/services/realtime + Prisma migrations on a branch; client swapped to `useApi`; ETL scripts. Deploy both to a **staging** environment with a staging Postgres. | Smoke checklist (6.2) passes on staging with ETL'd data from a GCS export. Two ETL rehearsals timed. |
-| **1 · Announce & freeze** | Tag current `main` as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Confirm no Firestore writes after `T_freeze` (check `users.timestamp`, `groups.createdAt`, chat doc update times in the console). | Zero writes for 5 minutes. |
-| **2 · Migrate** | `gcloud firestore export` → `extract` → `transform` (with `overrides.csv`) → `load` into **production** Postgres → `verify`. `pg_dump` after load. | All hard gates in 4.4 green; `migration_log` non-ok rows reviewed and accepted. |
-| **3 · Deploy** | Server: `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN` set; `prisma migrate deploy` already ran in Phase 2; deploy the new server build. Client: deploy build with `VITE_MAINTENANCE=0`, `VITE_API_URL` set. | Health check `GET /healthz` returns DB round-trip OK. |
-| **4 · Smoke** | Run 6.2 against production with two real accounts. | All pass. |
-| **5 · Bake** | 7 days. Firestore stays intact and **read-only** (rules flipped to deny writes). Watch server error rate, `messages` growth, `migration_log` reports from users ("my chat with X is missing"). | No rollback trigger (§7.2) fired. |
-| **6 · Decommission** | Delete Firestore data (export retained in GCS for 90 days), drop `migration_log`, remove the Firestore branch, remove `firebase/firestore` from client imports, remove unsigned Cloudinary preset (C6, opportunistic). | — |
+| Phase | What | Exit criteria | Status |
+|---|---|---|---|
+| **0a · Server foundation** | Prisma schema + migrations on Neon, `db.js`, `firebase.js`, `auth.js`, all REST routes, `realtime.js`, seed scripts (`prisma/seed.js` + `scripts/seed-auth.js`), `GET /healthz`. NO client changes. | Smoke checklist passes **LOCALLY** with seeded data (via `scripts/seed-auth.js` + `prisma/seed.js`). Server is curl-testable end-to-end. | **COMPLETED** (D8 verification passed: all 11 HTTP checks + socket/REST shape consistency verified) |
+| **0b · Client migration** | `api.js`, `useApi.js`, hook rewrites, `Home.jsx`, `Chat.jsx`, `video-call.jsx`, `Sidebar.jsx`, `firebase.js` cleanup. | Verified against local server + local client + Firebase Auth emulator. Zero Firestore/cache references. Clean build. | **COMPLETED** (Zero `firebase/firestore`, zero `localStorage` caches, 1 Socket.IO instance, Vite build passed) |
+| **0c · Staging deployment** *(optional)* | Deploy 0a+0b to a staging Render web service connected to a Neon staging branch, with a Vercel preview deployment pointing at it. | Smoke checklist passes on staging with seeded data. | **PENDING** |
+| **1 · Announce & freeze** | Tag current `main` as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Confirm no Firestore writes after `T_freeze` (check `users.timestamp`, `groups.createdAt`, chat doc update times in the console). | Zero writes for 5 minutes. | **PENDING** |
+| **2 · Migrate** | `gcloud firestore export` → `extract` → `transform` (with `overrides.csv`) → `load` into **production** Postgres → `verify`. `pg_dump` after load. | All hard gates in 4.4 green; `migration_log` non-ok rows reviewed and accepted. | **PENDING** |
+| **3 · Deploy** | Server: `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN` set; `prisma migrate deploy` already ran in Phase 2; deploy the new server build. Client: deploy build with `VITE_MAINTENANCE=0`, `VITE_API_URL` set. | Health check `GET /healthz` returns DB round-trip OK (Render health check targets `/healthz`). | **PENDING** |
+| **4 · Smoke** | Run 6.2 against production with two real accounts. | All pass. | **PENDING** |
+| **5 · Bake** | 7 days. Firestore stays intact and **read-only** (rules flipped to deny writes). Watch server error rate, `messages` growth, `migration_log` reports from users ("my chat with X is missing"). | No rollback trigger (§7.2) fired. | **PENDING** |
+| **6 · Decommission** | Delete Firestore data (export retained in GCS for 90 days), drop `migration_log`, remove the Firestore branch, remove `firebase/firestore` from client imports, remove unsigned Cloudinary preset (C6, opportunistic). | — | **PENDING** |
+
+> [!NOTE]
+> **Phasing Gate:** Phase 0a and Phase 0b are complete. Next step before production freeze (Phase 1) is either Phase 0c (Staging deployment) or Phase 2 migration rehearsals. Staging (Phase 0c) is defined as a secondary Render service + Neon branch + Vercel preview deployment.
 
 ### 6.2 Smoke checklist (staging and production)
 
@@ -718,35 +784,171 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 
 ### Resolved Decisions (Alignment from 2026-09-26 Review)
 
-1. **Phasing & Roadmap**: Executing **Phase 0 first** — Schema, Prisma migrations, Express REST/Socket.IO routes, client `useApi` integration, and local seed script before running ETL on production data.
+1. **Phasing & Roadmap**: Split into **Phase 0a (Server foundation)**, **Phase 0b (Client migration)**, and **Phase 0c (Staging deployment, optional)**. Phase 0a must be fully green locally before Phase 0b starts; Phase 0b must be fully green before Phase 1 (production freeze & ETL) begins.
 2. **Database Provider & Connection**: **Neon PostgreSQL** (AWS `ap-southeast-1`). Configured with pooled connection `DATABASE_URL` (`&pgbouncer=true`) and direct unpooled connection `DIRECT_URL` for migrations.
-3. **Authentication Strategy**: Firebase Auth retained. In local development and automated E2E testing, use Firebase Auth emulator (`FIREBASE_AUTH_EMULATOR_HOST`). In production deployed on Render, use Firebase Admin Service Account JSON key.
-4. **Content Moderation Integration**: Explicit columns `is_moderated boolean DEFAULT false` and `moderation_reason text` added to `messages` table schema and Prisma model to support the Jev AI content moderation system (`server/src/services/moderation.js`).
+3. **Authentication Strategy**: Firebase Auth retained. In local development and automated E2E testing, use Firebase Auth emulator (`FIREBASE_AUTH_EMULATOR_HOST` + `FIREBASE_PROJECT_ID`). In production deployed on Render, use Firebase Admin Service Account JSON key (`FIREBASE_SERVICE_ACCOUNT` + `FIREBASE_PROJECT_ID`).
+4. **Content Moderation Integration**: Explicit columns `is_moderated boolean DEFAULT false` and `moderation_reason text` added to `messages` table schema and Prisma model. Moderation call is hoisted **outside** the database transaction in `messages.send` to protect connection pooling.
 5. **Message Search Index**: Defer GIN full-text search index for now; add it in a future migration when a search UI is implemented.
-6. **Local Development Seeding**: Include `server/prisma/seed.js` with sample users and conversations for local testing and E2E validation.
-7. **Data Retention**: Firestore export retained in GCS for 90 days following cutover.
-8. **Blocked Users**: `blocked` enum value kept in schema for future-proofing, no UI exposed in v1.
+6. **Seeding Strategy (Two Scripts)**:
+   - `server/prisma/seed.js` — DB-only, idempotent upserts across users → friendships → conversations → conversation_members → messages. Enforces foreign key referential integrity.
+   - `server/scripts/seed-auth.js` — Emulator-only. Asserts `FIREBASE_AUTH_EMULATOR_HOST` is set, creates Firebase Auth users with deterministic UIDs, then invokes `prisma/seed.js`.
+7. **Health Monitoring**: `GET /healthz` performs `await prisma.$queryRaw`SELECT 1`` and returns `{ ok: true, mode: <"emulator"|"prod">, db: "up" }`. Render health check points to `/healthz`.
+8. **Data Retention**: Firestore export retained in GCS for 90 days following cutover.
+9. **Blocked Users**: `blocked` enum value kept in schema for future-proofing, no UI exposed in v1.
 
 ### Execution checklist
 
-- [ ] **Phase 0 (Active)**:
-  - [ ] Add `@prisma/client`, `prisma`, `firebase-admin` dependencies to `server/package.json`
-  - [ ] Configure `DATABASE_URL` and `DIRECT_URL` in `server/.env`
-  - [ ] Initialize `server/prisma/schema.prisma` and baseline migration `0001_init/migration.sql`
-  - [ ] Run `prisma migrate deploy` against Neon DB
-  - [ ] Create `server/prisma/seed.js` and verify database seeding
-  - [ ] Implement `src/db.js` (Prisma singleton + BigInt serializer)
-  - [ ] Implement `src/auth.js` (Firebase ID token verification, emulator & service-account aware)
-  - [ ] Implement REST endpoints: `/me`, `/users`, `/friends`, `/conversations`, and secure `/suggest-replies`
-  - [ ] Implement `src/realtime.js` (server-persisted messages, moderation check, scoped rooms & signalling)
-  - [ ] Implement client `src/lib/api.js` and `src/hooks/useApi.js` replacing `useFirestore.js`
-  - [ ] Update `Home.jsx` and `Chat.jsx` to use API conversation UUIDs and server message pagination
-  - [ ] Validate flow with Playwright E2E and capture screenshots to `output/screenshots/`
-- [ ] **Phase 1–2 (Production Cutover & ETL)**:
-  - [ ] Tag `pre-postgres`; deploy client maintenance gate; record `T_freeze`
-  - [ ] Export Firestore → ETL (`extract.js`, `transform.js` with `overrides.csv`, `load.js`) → verify hard gates
-  - [ ] Deploy server + client to Render/Vercel
-  - [ ] Run Smoke Checklist 6.2 in production
-- [ ] **Phase 5–6 (Bake & Decommission)**:
+- [x] **Phase 0a · Server Foundation (COMPLETE — 2026-09-26)**:
+  - [x] Add `@prisma/client`, `firebase-admin`, `zod` to dependencies; `prisma` to devDependencies; move `nodemon` to devDependencies
+  - [x] Configure environment variables in `server/.env` and `server/.env.example` (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_AUTH_EMULATOR_HOST`, `CORS_ORIGIN`, `PORT`)
+  - [x] Add required entries to `.gitignore` (`.env*`, `serviceAccountKey*`, `output/screenshots/`, `server/scripts/migrate/out/`)
+  - [x] Initialize `server/prisma/schema.prisma` with `isModerated`, `moderationReason`, and `directUrl`
+  - [x] Handcraft baseline migration `server/prisma/migrations/0001_init/migration.sql` with extensions, check constraints, and touch trigger
+  - [x] Run `npx prisma migrate deploy` against Neon DB
+  - [x] Verify `prisma migrate deploy` uses DIRECT_URL (not DATABASE_URL) — confirm no PgBouncer prepared-statement warnings during migration
+  - [x] Implement `src/db.js` (Prisma singleton + BigInt JSON replacer attached via Express)
+  - [x] Implement `src/firebase.js` (dual-mode init: emulator vs service account with production guard)
+  - [x] Implement `src/auth.js` (verifyFirebaseToken Express middleware & socketAuth Socket.IO middleware)
+  - [x] Implement REST endpoints:
+    - [x] `src/routes/me.js` (GET /me, POST /me/sync, PATCH /me)
+    - [x] `src/routes/users.js` (GET /users/search?q=)
+    - [x] `src/routes/friends.js` (POST /friends/requests, POST /friends/requests/:id/accept, GET /me/friends)
+    - [x] `src/routes/conversations.js` (GET /me/conversations, POST /conversations/dm, POST /conversations, DELETE /conversations/:id, GET /conversations/:id, GET /conversations/:id/messages with locked response shape)
+    - [x] `src/routes/health.js` (Implement GET /healthz — performs `await prisma.$queryRaw\`SELECT 1\`` and returns `{ ok: true, mode: <"emulator"|"prod">, db: "up", uptime, timestamp }`. Returns 503 if DB fails. Mounted before auth.)
+    - [x] `src/routes/suggestReplies.js` (mount verifyFirebaseToken)
+  - [x] Implement `src/services/messages.js` (hoisting moderation call outside transaction per R5)
+  - [x] Implement `src/services/friends.js` & `src/services/conversations.js`
+  - [x] Implement `src/realtime.js` (presence Map, scoped rooms, server-persisted messages, scoped signalling)
+  - [x] Create `server/prisma/seed.js` (DB-only, idempotent upserts with staggered timestamps & moderation test data)
+  - [x] Create `server/scripts/seed-auth.js` (emulator-only with deterministic UIDs, supports `--reset`, invokes `prisma/seed.js`)
+  - [x] Verify local curl flow end-to-end (`test-curl-flow.js` HTTP + Socket.IO suite passed all 11 gates and shape-consistency assertion)
+- [x] **Phase 0b · Client Migration (COMPLETE — 2026-09-27)**:
+  - [x] Configure `VITE_API_URL` & `VITE_SOCKET_URL` in `client/.env.local` and export `API_URL` & `SOCKET_URL` from `client/src/lib/config.js`
+  - [x] Implement `client/src/lib/api.js` (`apiFetch` with ID token injection, 401 sign-out redirect, `ApiError`)
+  - [x] Create `client/src/contexts/AuthContext.jsx` (`AuthProvider`, `useAuth`) and wrap `App.jsx`
+  - [x] Implement `client/src/hooks/useApi.js` replacing `useFirestore.js`
+  - [x] Implement `client/src/hooks/useSocket.js` (single Socket.IO proxy singleton, reconnect on token update, debounced disconnect)
+  - [x] Rewrite `useAddUser.js` (`POST /me/sync`), `useGetUsername.js` (`GET /me`), and `useGetUserInfo.js` (derived from `auth.currentUser`)
+  - [x] Delete `useFirestore.js` and `useGetRoomInfo.js`
+  - [x] Rewrite `Login.jsx` & `SignUp.jsx` (remove `localStorage['auth-info']`, invoke `addUser`)
+  - [x] Rewrite `Home.jsx` (server-backed `/me`, `/me/friends`, `/me/conversations`, realtime presence diffs, user search, group create)
+  - [x] Rewrite `Chat.jsx` (keyset pagination `?before=`, optimistic messages with timeout, read receipts, debounced typing, moderation placeholder)
+  - [x] Rewrite `video-call.jsx` (scoped signaling via `useSocket()`)
+  - [x] Rewrite `client/src/Firebase/firebase.js` (auth only + emulator connection, remove Firestore, guard messaging/analytics)
+  - [x] Audit & eliminate all `firebase/firestore` imports (0 occurrences in `client/src`)
+  - [x] Audit & eliminate all `localStorage` message/room caching (0 occurrences in `client/src`)
+  - [x] Audit socket connection instances (`io()` appears exactly once in `useSocket.js`)
+  - [x] Verify production build (`npm run build` succeeds cleanly)
+- [ ] **Phase 0c · Staging Deployment (Optional)**:
+  - [ ] Deploy 0a to staging Render web service & 0b to Vercel preview deployment connected to Neon staging branch
+  - [ ] Re-run smoke checklist with seeded data
+- [ ] **Phase 1 · Announce & Freeze**:
+  - [ ] Tag `pre-postgres`; deploy client maintenance gate (`VITE_MAINTENANCE=1`); record `T_freeze`
+  - [ ] Confirm zero Firestore writes for 5 minutes
+- [ ] **Phase 2 · Data Migration (ETL)**:
+  - [ ] Implement `scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js`
+  - [ ] Implement `scripts/migrate/reverse-etl.js` (used during bake for rollback — see §7.3)
+  - [ ] Establish `overrides.csv` workflow (`docId,uidA,uidB`) consulted before automatic resolution in `transform.js`
+  - [ ] Two timed rehearsals against staging Postgres (measure wall-clock; window = 2× rehearsal + 30 min buffer)
+  - [ ] Export Firestore → ETL (`extract.js`, `transform.js`, `load.js`) → verify hard gates → `pg_dump`
+- [ ] **Phase 3 · Production Deployment & Cutover**:
+  - [ ] Set production env vars on Render (`DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`)
+  - [ ] Run `prisma migrate deploy` on production Neon DB
+  - [ ] Deploy server to Render; confirm `GET /healthz` returns DB round-trip OK
+  - [ ] Deploy client to Vercel with `VITE_MAINTENANCE=0`, `VITE_API_URL`
+- [ ] **Phase 4 · Smoke Testing**:
+  - [ ] Run Smoke Checklist 6.2 in production with two real accounts
+- [ ] **Phase 5–6 · Bake & Decommission**:
   - [ ] 7-day bake; keep Firestore read-only
   - [ ] Decommission Firestore; drop `migration_log`; keep backup per 90-day retention
+
+---
+
+## 10. Implementation status & remaining work roadmap
+
+### 10.1 Implemented items (Phase 0a & Phase 0b)
+
+#### 1. Backend Foundation (Phase 0a) — COMPLETE
+- **Database Schema & Migrations:**
+  - Neon PostgreSQL provisioned in AWS `ap-southeast-1`.
+  - Schema defined in `server/prisma/schema.prisma` with `directUrl` for migrations and `DATABASE_URL` with `&pgbouncer=true`.
+  - Baseline migration `server/prisma/migrations/0001_init/migration.sql` deployed: tables `users`, `friendships`, `conversations`, `conversation_members`, `messages`, `migration_log`. Includes extensions `uuid-ossp`, `citext`, check constraint `user_lo < user_hi`, trigger `touch_updated_at`, partial unique index on `conversations(dm_key)`.
+- **Database Access & Services:**
+  - `server/src/db.js`: Prisma client singleton with BigInt JSON serialization.
+  - `server/src/firebase.js`: Dual-mode Firebase Admin SDK init (`FIREBASE_AUTH_EMULATOR_HOST` vs base64 `FIREBASE_SERVICE_ACCOUNT`).
+  - `server/src/auth.js`: `verifyFirebaseToken` Express middleware and `socketAuth` Socket.IO handshake middleware.
+  - `server/src/services/messages.js`: External moderation hoisted outside DB transaction; monotonic read cursors (`GREATEST`).
+  - `server/src/services/friends.js`: Atomic friendship requests and accepts with DM creation.
+  - `server/src/services/conversations.js`: Group creation with friend validation, deletion with cascade, inbox query with unread count.
+  - `server/src/realtime.js`: In-memory presence map with diff emissions (`presence:online`, `presence:offline`), scoped `conversation:<id>` rooms, server-persisted messages, scoped WebRTC signaling.
+- **REST Endpoints:**
+  - `GET /healthz`: Unauthenticated, mounted before auth, returns `{ ok, mode, db, uptime, timestamp }`.
+  - `GET /me`, `POST /me/sync`, `PATCH /me`.
+  - `GET /users/search?q=`.
+  - `GET /me/friends`, `POST /friends/requests`, `POST /friends/requests/:id/accept`.
+  - `GET /me/conversations`, `POST /conversations/dm`, `POST /conversations`, `DELETE /conversations/:id`, `GET /conversations/:id`, `GET /conversations/:id/messages`.
+  - `POST /api/suggest-replies`: Mounted with token verification.
+- **Seeding & Verification Suite:**
+  - `server/prisma/seed.js`: Upserts deterministic users (`alice`, `bob`, `charlie`), friendships, DM with 4 messages & unread cursor, group with 2 messages (1 moderated).
+  - `server/scripts/seed-auth.js`: Seeds Firebase Auth emulator accounts (`password123`) with `--reset` support.
+  - `server/scripts/test-curl-flow.js`: End-to-end integration test exercising Express HTTP and Socket.IO layers; strict socket vs REST message shape consistency verified.
+
+#### 2. Frontend Client Migration (Phase 0b) — COMPLETE
+- **Configuration & Transport:**
+  - `client/src/lib/config.js` & `client/.env.local`: Configured `API_URL` and `SOCKET_URL`.
+  - `client/src/lib/api.js`: `apiFetch` with automatic Firebase ID token injection, 401 redirect to `/login`, and `ApiError` class.
+- **Authentication & Global State:**
+  - `client/src/contexts/AuthContext.jsx`: `AuthProvider` managing `currentUser`, `loading`, and token lifecycle.
+  - `client/src/App.jsx`: Wrapped in `AuthProvider`.
+  - `client/src/hooks/useGetUserInfo.js`: Derived directly from `auth.currentUser`.
+  - `client/src/Pages/Login.jsx` & `client/src/Pages/SignUp.jsx`: Removed `localStorage['auth-info']` and artificial delays; calls `addUser` (`POST /me/sync`).
+- **Data & Realtime Hooks:**
+  - `client/src/hooks/useApi.js`: Exposes REST client methods (`getMessages`, `createGroup`, `getConversations`, `deleteGroup`, `sendFriendRequest`, `acceptFriendRequest`, `getFriendData`, `searchUsers`).
+  - `client/src/hooks/useAddUser.js`: Calls `POST /me/sync`.
+  - `client/src/hooks/useGetUsername.js`: Calls `GET /me`.
+  - `client/src/hooks/useSocket.js`: Single proxy instance for Socket.IO connection across pages, auto-reconnecting on token change with debounced disconnect.
+  - Deleted obsolete hooks: `client/src/hooks/useFirestore.js` and `client/src/hooks/useGetRoomInfo.js`.
+- **Page Rewrites:**
+  - `client/src/Pages/Home.jsx`: Decoupled from Firestore; loads `/me`, `/me/friends`, `/me/conversations`; realtime presence diffs, user search, group create, status updates.
+  - `client/src/Pages/Chat.jsx`: Keyset message pagination (`?before=`), optimistic sending with 5s timeout, read receipts (`socket.emit("read")`), debounced typing indicators, moderation placeholder (`"Message hidden due to content moderation"`), zero `localStorage` message caching.
+  - `client/src/Pages/video-call.jsx`: Scoped WebRTC signaling using shared socket instance.
+  - `client/src/Firebase/firebase.js`: Removed `getFirestore`/`db`; configured Firebase Auth emulator in dev; guarded messaging/analytics.
+- **Verification Gates Passed:**
+  - `grep -rn "firebase/firestore" client/src/` $\to$ **0 matches**.
+  - `grep -rn "localStorage.*messages_|localStorage.*room_" client/src/` $\to$ **0 matches**.
+  - `grep -rn "useFirestore|useGetRoomInfo" client/src/` $\to$ **0 matches**.
+  - `grep -rn "io(" client/src/` $\to$ **Exactly 1 match** in `useSocket.js`.
+  - `npm run build` $\to$ **Passed cleanly** (1,767 modules transformed in 6.46s).
+
+---
+
+### 10.2 What is left to do (Phases 0c – 6)
+
+```
+[Phase 0a: Server Foundation] ──> COMPLETE
+[Phase 0b: Client Migration]  ──> COMPLETE
+             │
+             ├──> [Phase 0c: Staging Deployment] (Optional staging validation on Render/Neon branch/Vercel preview)
+             │
+             └──> [Phase 1: Announce & Freeze] (Git tag 'pre-postgres', VITE_MAINTENANCE=1, 5-min zero writes)
+                    │
+                    └──> [Phase 2: Data Migration (ETL)] (extract.js, transform.js, load.js, verify.js, rehearsals)
+                           │
+                           └──> [Phase 3: Production Cutover] (prisma migrate deploy, Render deploy, Vercel deploy)
+                                  │
+                                  └──> [Phase 4: Smoke Testing] (Run Smoke Checklist 6.2 on production)
+                                         │
+                                         └──> [Phase 5: 7-Day Bake Period] (Firestore read-only, log monitoring)
+                                                │
+                                                └──> [Phase 6: Decommission] (Archive GCS export, drop Firestore)
+```
+
+| Phase | Milestone | Deliverables / Actions Required |
+|---|---|---|
+| **Phase 0c** | **Staging Deployment** *(Optional)* | 1. Create a Neon DB development/staging branch.<br>2. Deploy server to a staging Render Web Service with staging DB URL.<br>3. Deploy client to a Vercel Preview branch pointing `VITE_API_URL` to staging Render.<br>4. Run Smoke Checklist 6.2 with seeded accounts. |
+| **Phase 1** | **Announce & Freeze** | 1. Git tag `pre-postgres` across repo.<br>2. Build and deploy client maintenance gate (`VITE_MAINTENANCE=1`).<br>3. Verify zero Firestore writes for 5 minutes (`T_freeze`). |
+| **Phase 2** | **Data Migration (ETL)** | 1. Implement ETL scripts in `server/scripts/migrate/` (`extract.js`, `transform.js`, `load.js`, `verify.js`, `reverse-etl.js`).<br>2. Populate `overrides.csv` for resolving ambiguous chat keys.<br>3. Run 2 timed rehearsals against staging DB to determine cutover window duration.<br>4. Perform production Firestore export (`gcloud firestore export`) and ETL load into production Neon Postgres.<br>5. Run `pg_dump` backup of loaded database. |
+| **Phase 3** | **Production Cutover** | 1. Set production environment variables on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`).<br>2. Run `npx prisma migrate deploy` on production Neon database.<br>3. Deploy production server to Render; verify `GET /healthz` returns HTTP 200 `{ ok: true, mode: "prod", db: "up" }`.<br>4. Deploy production client to Vercel with `VITE_MAINTENANCE=0` and production `VITE_API_URL`. |
+| **Phase 4** | **Production Smoke Testing** | 1. Execute Smoke Checklist 6.2 end-to-end with two real production accounts. |
+| **Phase 5** | **7-Day Bake Period** | 1. Set Firestore security rules to read-only (`allow write: if false;`).<br>2. Monitor Render backend logs and Neon query latency.<br>3. Monitor for unhandled exceptions or user reports of missing conversations. |
+| **Phase 6** | **Decommission & Cleanup** | 1. Ensure Firestore export is retained in Google Cloud Storage for 90 days.<br>2. Delete Cloud Firestore database collections.<br>3. Drop temporary `migration_log` table from PostgreSQL.<br>4. Clean up any lingering legacy code branches. |

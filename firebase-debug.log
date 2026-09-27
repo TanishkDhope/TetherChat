@@ -1,0 +1,38 @@
+[debug] [2026-09-26T17:06:47.586Z] ----------------------------------------------------------------------
+[debug] [2026-09-26T17:06:47.588Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Tanishk\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js emulators:start --only auth --project connectly-9d39a
+[debug] [2026-09-26T17:06:47.588Z] CLI Version:   13.30.0
+[debug] [2026-09-26T17:06:47.589Z] Platform:      win32
+[debug] [2026-09-26T17:06:47.589Z] Node Version:  v24.7.0
+[debug] [2026-09-26T17:06:47.589Z] Time:          Sat Sep 26 2026 22:36:47 GMT+0530 (India Standard Time)
+[debug] [2026-09-26T17:06:47.589Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-09-26T17:06:47.594Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-09-26T17:06:47.829Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] Failed to authenticate, have you run firebase login?
+[warn] !  emulators: You are not currently authenticated so some features may not work correctly. Please run firebase login to authenticate the CLI. 
+[info] i  emulators: Starting emulators: auth {"metadata":{"emulator":{"name":"hub"},"message":"Starting emulators: auth"}}
+[debug] [2026-09-26T17:06:47.878Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-09-26T17:06:47.879Z] assigned listening specs for emulators {"user":{"auth":[{"address":"127.0.0.1","family":"IPv4","port":9099}],"hub":[{"address":"127.0.0.1","family":"IPv4","port":4400},{"address":"::1","family":"IPv6","port":4400}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4500}]},"metadata":{"message":"assigned listening specs for emulators"}}
+[debug] [2026-09-26T17:06:47.887Z] [hub] writing locator at C:\Users\Tanishk\AppData\Local\Temp\hub-connectly-9d39a.json
+[warn] !  emulators: The Emulator UI is not starting, either because none of the running emulators have a UI component or the Emulator UI cannot determine the Project ID. Pass the --project flag to specify a project. {"metadata":{"emulator":{"name":"hub"},"message":"The Emulator UI is not starting, either because none of the running emulators have a UI component or the Emulator UI cannot determine the Project ID. Pass the --project flag to specify a project."}}
+[debug] [2026-09-26T17:06:57.580Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase Data Connect VSCode extension, this is expected and not an issue.
+[info] 
+┌─────────────────────────────────────────────────────────────┐
+│ ✔  All emulators ready! It is now safe to connect your app. │
+└─────────────────────────────────────────────────────────────┘
+
+┌────────────────┬────────────────┐
+│ Emulator       │ Host:Port      │
+├────────────────┼────────────────┤
+│ Authentication │ 127.0.0.1:9099 │
+└────────────────┴────────────────┘
+  Emulator Hub running at 127.0.0.1:4400
+  Other reserved ports: 4500
+
+Issues? Report them at https://github.com/firebase/firebase-tools/issues and attach the *-debug.log files.
+ 
+[debug] [2026-09-26T17:06:57.905Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-09-26T17:06:57.905Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[info] i  To reset your email address to alice@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=0cSCnSogUr85bUFoXY_L-G2qmAocfjv5YRS4K87PHFN3EFfabcckKz&apiKey=fake-api-key {"metadata":{"emulator":{"name":"auth"},"message":"To reset your email address to alice@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=0cSCnSogUr85bUFoXY_L-G2qmAocfjv5YRS4K87PHFN3EFfabcckKz&apiKey=fake-api-key"}}
+[info] i  To reset your email address to bob@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=Sh6rhaaU34oRlSaK9ekk91saVIq7Y-B9V-9I5KUHtUaiwzT88d9wqO&apiKey=fake-api-key {"metadata":{"emulator":{"name":"auth"},"message":"To reset your email address to bob@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=Sh6rhaaU34oRlSaK9ekk91saVIq7Y-B9V-9I5KUHtUaiwzT88d9wqO&apiKey=fake-api-key"}}
+[info] i  To reset your email address to charlie@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=_taRFaRXoWG07j5-5QFEYxaPrLJQ__WhrUPP-4GfhpOwYuvS3_TrX-&apiKey=fake-api-key {"metadata":{"emulator":{"name":"auth"},"message":"To reset your email address to charlie@example.com, follow this link: http://127.0.0.1:9099/emulator/action?mode=recoverEmail&lang=en&oobCode=_taRFaRXoWG07j5-5QFEYxaPrLJQ__WhrUPP-4GfhpOwYuvS3_TrX-&apiKey=fake-api-key"}}

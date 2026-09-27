@@ -9,16 +9,18 @@ import {
   Heart,
   Loader2,
   Lock,
-  LogOut,agy 
+  LogOut,
+  MessageSquare,
+  MessageSquarePlus,
   Save,
   Send,
   Settings,
   Sun,
+  Palette,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
-import { nanoid } from "nanoid";
 import { useContext, useEffect, useRef, useState } from "react";
 import toast, { Toaster, resolveValue } from "react-hot-toast";
 import { AiOutlineUser } from "react-icons/ai";
@@ -28,59 +30,79 @@ import { MdOutlineMoreVert } from "react-icons/md";
 import { RxExit } from "react-icons/rx";
 import { TbSettings } from "react-icons/tb";
 import { useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
 import styled from "styled-components";
 import BlurText from "../components/BlurText";
 import PwaPrompt from "../components/PwaPrompt";
 import { Sidebar } from "../components/Sidebar";
-import { socketContext } from "../contexts/socketContext";
 import ThemeContext from "../contexts/ThemeContext";
 import { auth, generateToken, messaging } from "../Firebase/firebase";
-import { useFirestore } from "../hooks/useFirestore";
-import { GetRoomInfo } from "../hooks/useGetRoomInfo";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
 import { notifFalse, notifTrue, privFalse, privTrue } from "../hooks/useToasts";
-import { SOCKET_URL } from "../lib/config";
+import { useSocket } from "../hooks/useSocket";
+import { useApi } from "../hooks/useApi";
+import { apiFetch } from "../lib/api";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const [registeredUsers, setRegisteredUsers] = useState([]);
-  const { isAuth, email, displayName, profilePicUrl } = useGetUserInfo(); // Assume `user` contains displayName and profile picture
-  const [onlineUsers, setOnlineUsers] = useState([]);
-  const { socket, setSocket } = useContext(socketContext);
-  // setSocket(useMemo(() => io("http://localhost:5000"), []));
-  const [joinInfo, setJoinInfo] = useState({});
+  const { isAuth, email, displayName, profilePicUrl, uid, loading: authLoading } = useGetUserInfo();
+  const { socket } = useSocket();
+  const {
+    getConversations,
+    getFriends,
+    createGroupConversation,
+    deleteConversation,
+    getOrCreateDm,
+    sendFriendRequest,
+    acceptFriendRequest,
+    declineFriendRequest,
+    searchUsers,
+  } = useApi();
+
+  const [conversations, setConversations] = useState([]);
+  const [friendsList, setFriendsList] = useState([]);
+  const [showOnlineUsers, setShowOnlineUsers] = useState(false);
+  const onlineUsers = friendsList.filter((f) => f.isOnline === "online" || f.isOnline === true);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
-  const [groupPic, setGroupPic] = useState(null);
-  const [groupPicPreview, setGroupPicPreview] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState([]);
-  const [groups, setGroups] = useState(() => {
-    const saved = localStorage.getItem("groups");
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [showOnlineUsers, setShowOnlineUsers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
   const [showProfile, setShowProfile] = useState(false);
   const profileRef = useRef(null);
   const userRef = useRef(null);
   const menuRef = useRef(null);
   const [isOnline, setIsOnline] = useState("online");
+  const handleOnline = () => {
+    setIsOnline((prev) => (prev === "online" ? "offline" : "online"));
+  };
   const [statusMessage, setStatusMessage] = useState("");
+  const handleStatusUpdate = async () => {
+    if (!statusMessage.trim()) return;
+    try {
+      await apiFetch("/me", {
+        method: "PATCH",
+        body: { statusText: statusMessage.trim() },
+      });
+      setProfile((prev) => ({ ...prev, statusText: statusMessage.trim() }));
+      toast("Status updated!");
+    } catch (err) {
+      console.error("Error updating status:", err);
+    }
+  };
   const [showMenu, setShowMenu] = useState(false);
 
   // Profile management + Settings
-  const [profile, setProfile] = useState(() => {
-    const authInfo = JSON.parse(localStorage.getItem("auth-info") || "{}");
-    return {
-      displayName: authInfo.displayName || displayName,
-      profilePicUrl:
-        authInfo.profilePicUrl ||
-        profilePicUrl ||
-        "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
-      bio: authInfo.bio || "",
-    };
+  const [profile, setProfile] = useState({
+    displayName: displayName || "User",
+    profilePicUrl:
+      profilePicUrl ||
+      "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
+    bio: "",
+    statusText: "",
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -89,26 +111,25 @@ function Home() {
   const [avatarFile, setAvatarFile] = useState(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  const [notifications, setNotifications] = useState(() => {
-    const savedNotifications = localStorage.getItem("notifications");
-    return savedNotifications ? JSON.parse(savedNotifications) : {};
-  });
+  const [notifications, setNotifications] = useState({});
   const { isDarkMode, setIsDarkMode } = useContext(ThemeContext);
-  const {
-    getRegisteredUsers,
-    createGroup: createGroupDoc,
-    getUserGroups,
-  } = useFirestore();
-
-  const [users, setUsers] = useState(() => {
-    const savedUsers = localStorage.getItem("registeredUsers");
-    return savedUsers ? JSON.parse(savedUsers) : [];
-  });
 
   const quickStats = [
-    { icon: <Users />, label: "Online Friends", value: "12" },
-    { icon: <MessageSquare />, label: "Active Chats", value: "5" },
-    { icon: <Heart />, label: "Favorite Groups", value: "3" },
+    {
+      icon: <Users />,
+      label: "Online Friends",
+      value: friendsList.filter((f) => f.relation === "friend" && f.online).length.toString(),
+    },
+    {
+      icon: <Send />,
+      label: "Active Chats",
+      value: conversations.length.toString(),
+    },
+    {
+      icon: <Heart />,
+      label: "Groups",
+      value: conversations.filter((c) => c.kind === "group").length.toString(),
+    },
   ];
 
   const [notif, setNotif] = useState(true);
@@ -123,7 +144,7 @@ function Home() {
         if (!notif) {
           notifTrue();
         } else {
-          notifFalse(); // Call when disabling Privacy Mode
+          notifFalse();
         }
         setNotif(!notif);
       },
@@ -136,105 +157,121 @@ function Home() {
         if (!privacyMode) {
           privTrue();
         } else {
-          privFalse(); // Call when disabling Privacy Mode
+          privFalse();
         }
         setPrivacyMode(!privacyMode);
       },
     },
   ];
 
-  const handleStatusUpdate = () => {
-    socket.emit("join", {
-      displayName,
-      profilePicUrl,
-      status: statusMessage,
-      isOnline,
-    });
-
-    setStatusMessage("");
-  };
-
-  const handleOnline = () => {
-    setIsOnline((prevState) => {
-      const newStatus = prevState === "online" ? "offline" : "online";
-
-      // Emit the updated status AFTER setting state
-      socket.emit("join", {
-        displayName,
-        profilePicUrl,
-        status: statusMessage,
-        isOnline: newStatus,
+  // Load server-side state
+  useEffect(() => {
+    if (!isAuth && !authLoading) {
+      navigate("/login");
+      return;
+    }
+    if (isAuth) {
+      let isMounted = true;
+      setIsLoading(true);
+      Promise.all([
+        apiFetch("/me").catch(() => null),
+        getFriends().catch(() => []),
+        getConversations().catch(() => []),
+      ]).then(([me, friends, convs]) => {
+        if (isMounted) {
+          if (me) {
+            const resolvedProfile = {
+              displayName: me.displayName || displayName || "User",
+              profilePicUrl:
+                me.avatarUrl ||
+                profilePicUrl ||
+                "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
+              bio: me.bio || "",
+              statusText: me.statusText || "",
+            };
+            setProfile(resolvedProfile);
+            setEditProfile(resolvedProfile);
+          }
+          setFriendsList(Array.isArray(friends) ? friends : []);
+          setConversations(Array.isArray(convs) ? convs : []);
+          setIsLoading(false);
+        }
       });
-      localStorage.setItem("isOnline", newStatus);
 
-      return newStatus; // Update state with the new value
-    });
-  };
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [isAuth, authLoading, navigate]);
 
+  // Socket event listeners with single effect and cleanup
   useEffect(() => {
-    setSocket(io(SOCKET_URL));
-  }, []);
+    if (!socket) return;
 
-  useEffect(() => {
-    generateToken();
-    onMessage(messaging, (payload) => {
-      console.log("Message received. ", payload);
-    });
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("notifications", JSON.stringify(notifications));
-  }, [notifications]);
-
-  useEffect(() => {
-    localStorage.setItem("theme", JSON.stringify(isDarkMode));
-  }, [isDarkMode]);
-
-  // Persist groups so they survive reloads.
-  useEffect(() => {
-    localStorage.setItem("groups", JSON.stringify(groups));
-  }, [groups]);
-
-  // Durable source of truth: load the groups this user belongs to from
-  // Firestore. This reaches members who were offline when the group was made.
-  useEffect(() => {
-    if (!email) return;
-    (async () => {
-      const dbGroups = await getUserGroups(email);
-      if (dbGroups.length) {
-        setGroups((prev) => {
-          const byId = new Map(prev.map((g) => [g.id, g]));
-          dbGroups.forEach((g) => byId.set(g.id, g));
-          return [...byId.values()];
-        });
-      }
-    })();
-  }, [email]);
-
-  useEffect(() => {
-    const getUsers = async () => {
-      const localUsers = localStorage.getItem("registeredUsers");
-      if (!localUsers) {
-        // const registeredUsers = await getRegisteredUsers();
-        setRegisteredUsers(registeredUsers);
-        localStorage.setItem(
-          "registeredUsers",
-          JSON.stringify(registeredUsers),
-        );
-        console.log("Registered Users Loaded");
-      } else {
-        setRegisteredUsers(JSON.parse(localUsers));
-        console.log("Local Users Loaded");
-      }
+    const handleFriendRequest = () => {
+      getFriends().then((updated) => setFriendsList(updated || [])).catch(() => {});
+      toast("New friend request received!");
     };
-    getUsers();
 
+    const handleFriendAccepted = () => {
+      getFriends().then((updated) => setFriendsList(updated || [])).catch(() => {});
+      getConversations().then((updated) => setConversations(updated || [])).catch(() => {});
+      toast("Friend request accepted!");
+    };
+
+    const handleConversationCreated = (conv) => {
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === conv.id)) return prev;
+        return [conv, ...prev];
+      });
+    };
+
+    const handleConversationDeleted = ({ id }) => {
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+    };
+
+    const handlePresenceOnline = ({ userId }) => {
+      setFriendsList((prev) =>
+        prev.map((f) => {
+          const fid = f.id || f.user?.id;
+          return fid === userId ? { ...f, online: true } : f;
+        })
+      );
+    };
+
+    const handlePresenceOffline = ({ userId }) => {
+      setFriendsList((prev) =>
+        prev.map((f) => {
+          const fid = f.id || f.user?.id;
+          return fid === userId ? { ...f, online: false } : f;
+        })
+      );
+    };
+
+    socket.on("friend:request", handleFriendRequest);
+    socket.on("friend:accepted", handleFriendAccepted);
+    socket.on("conversation:created", handleConversationCreated);
+    socket.on("conversation:deleted", handleConversationDeleted);
+    socket.on("presence:online", handlePresenceOnline);
+    socket.on("presence:offline", handlePresenceOffline);
+
+    return () => {
+      socket.off("friend:request", handleFriendRequest);
+      socket.off("friend:accepted", handleFriendAccepted);
+      socket.off("conversation:created", handleConversationCreated);
+      socket.off("conversation:deleted", handleConversationDeleted);
+      socket.off("presence:online", handlePresenceOnline);
+      socket.off("presence:offline", handlePresenceOffline);
+    };
+  }, [socket]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileRef.current && !profileRef.current.contains(event.target)) {
         setShowProfile(false);
       }
       if (userRef.current && !userRef.current.contains(event.target)) {
-        setShowOnlineUsers(false);
+        setShowMenu(false);
       }
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setShowMenu(false);
@@ -248,12 +285,6 @@ function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isAuth) {
-      navigate("/");
-    }
-  }, [isAuth, navigate]);
-
-  useEffect(() => {
     const htmlElement = document.documentElement;
     if (isDarkMode) {
       htmlElement.classList.add("dark");
@@ -262,122 +293,87 @@ function Home() {
     }
   }, [isDarkMode]);
 
-  useEffect(() => {
-    if (displayName && socket) {
-      setIsLoading(true);
-
-      const fetchUsers = async () => {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const newUsers = await getRegisteredUsers();
-          setUsers(newUsers);
-          console.log("DB users loaded", newUsers);
-          localStorage.setItem("registeredUsers", JSON.stringify(newUsers));
-        } catch (error) {
-          console.error("Error fetching users:", error);
-        } finally {
-          setIsLoading(false); // Ensure loading is false after fetching
-        }
-      };
-
-      setIsOnline((prevState) => {
-        const newState = localStorage.getItem("isOnline") || "online";
-
-        socket.emit("join", {
-          displayName,
-          profilePicUrl,
-          status: statusMessage,
-          isOnline: newState,
-        });
-
-        return newState;
+  // Handle DM join
+  const handleJoinRoom = async (user) => {
+    try {
+      const otherId = user.id || user.userId;
+      const conv = await getOrCreateDm(otherId);
+      navigate(`/chat/${conv.id}`, {
+        state: {
+          userData: {
+            ...user,
+            id: otherId,
+            name: user.name || user.displayName,
+            avatarUrl: user.profilePicUrl || user.avatarUrl,
+          },
+        },
       });
-
-      socket.on("onlineUsers", (users) => {
-        setOnlineUsers(users);
-      });
-
-      socket.on("message-notif", (message, username, roomId) => {
-        let roomMessages =
-          JSON.parse(localStorage.getItem(`messages_${roomId}`)) || [];
-        roomMessages.push(message);
-        localStorage.setItem(
-          `messages_${roomId}`,
-          JSON.stringify(roomMessages),
-        );
-
-        setNotifications((prevNotifications) => ({
-          ...prevNotifications,
-          [username]: (prevNotifications[username] || 0) + 1,
-        }));
-      });
-
-      socket.on("requestJoin", ({ from, roomId }) => {
-        setJoinInfo({ from, roomId });
-        localStorage.setItem(from, roomId);
-        setIsVisible(true);
-      });
-
-      socket.on("groupCreated", (group) => {
-        // Broadcast to everyone — only add it if I'm actually a member.
-        if (group.members && email && !group.members.includes(email)) return;
-        setGroups((prev) =>
-          prev.some((g) => g.id === group.id) ? prev : [...prev, group],
-        );
-      });
-
-      socket.on("groupDeleted", (groupId) => {
-        setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      });
-
-      if (users.length === 0) {
-        fetchUsers(); // Call fetchUsers only if users are empty
-      } else {
-        setIsLoading(false); // If users exist, stop loading
-      }
+    } catch (err) {
+      console.error("Failed to start DM:", err);
+      toast("Could not open chat");
     }
-  }, [displayName, socket]);
-
-  const handleJoinRoom = (user) => {
-    const ExistRoom = GetRoomInfo(user.name);
-    let roomId;
-    if (ExistRoom.roomId) {
-      roomId = ExistRoom.roomId;
-    } else {
-      roomId = nanoid();
-    }
-    localStorage.setItem(user.name, roomId);
-    notifications[user.name] = 0;
-    localStorage.setItem("notifications", JSON.stringify(notifications));
-    setJoinInfo({ from: displayName, roomId });
-    const userData = user;
-    // Persist room metadata so a page refresh on /chat doesn't lose it.
-    localStorage.setItem(`room_${roomId}`, JSON.stringify(userData));
-    navigate(`/chat/${roomId}`, { state: { userData } });
-    socket.emit("requestJoin", { from: displayName, to: user.id, roomId });
   };
 
-  // Joining a group: everyone shares the SAME room (the group's id), so the
-  // whole group lands in one chat instead of separate random rooms.
+  // Handle Group join
   const handleJoinGroup = (group) => {
-    const roomId = group.id;
-    const userData = { ...group, isGroup: true };
-    localStorage.setItem(`room_${roomId}`, JSON.stringify(userData));
-    navigate(`/chat/${roomId}`, { state: { userData } });
+    navigate(`/chat/${group.id}`, {
+      state: {
+        userData: { ...group, isGroup: true },
+      },
+    });
+  };
+
+  const handleSendFriendRequest = async (user) => {
+    try {
+      const toUserId = user.id || user.userId;
+      await sendFriendRequest(toUserId);
+      toast("Friend request sent!");
+      const updated = await getFriends();
+      setFriendsList(updated || []);
+    } catch (err) {
+      console.error("Error sending friend request:", err);
+      toast(err.message || "Failed to send request");
+    }
+  };
+
+  const handleAcceptFriend = async (req) => {
+    try {
+      const otherId = req.id || req.userId || req.user?.id;
+      await acceptFriendRequest(otherId);
+      toast("Friend request accepted!");
+      const updatedFriends = await getFriends();
+      setFriendsList(updatedFriends || []);
+      const updatedConvs = await getConversations();
+      setConversations(updatedConvs || []);
+    } catch (err) {
+      console.error("Error accepting friend request:", err);
+      toast("Failed to accept request");
+    }
+  };
+
+  const handleDeclineFriend = async (req) => {
+    try {
+      const otherId = req.id || req.userId || req.user?.id;
+      await declineFriendRequest(otherId);
+      toast("Friend request declined");
+      const updatedFriends = await getFriends();
+      setFriendsList(updatedFriends || []);
+    } catch (err) {
+      console.error("Error declining friend request:", err);
+      toast("Failed to decline request");
+    }
   };
 
   const handleSignOut = async () => {
     try {
-      socket.disconnect();
       await signOut(auth);
-      localStorage.clear();
-      navigate("/");
+      navigate("/login");
     } catch (err) {
-      console.log(err);
+      console.error("Error during sign out:", err);
     }
   };
 
-  //PROFILE MANAGEMENT LOGIC
+  // PROFILE MANAGEMENT LOGIC
   const openProfileModal = () => {
     setEditProfile(profile);
     setAvatarPreview(null);
@@ -402,7 +398,7 @@ function Home() {
   };
 
   const handleSaveProfile = async () => {
-    if (!editProfile.displayName.trim()) {
+    if (!editProfile.displayName?.trim()) {
       toast("Display name can't be empty");
       return;
     }
@@ -410,44 +406,34 @@ function Home() {
     try {
       let newPicUrl = editProfile.profilePicUrl;
 
-      // Upload new avatar to Cloudinary if one was picked
       if (avatarFile) {
         const formData = new FormData();
         formData.append("file", avatarFile);
         formData.append("upload_preset", "ml_default");
         const response = await axios.post(
           "https://api.cloudinary.com/v1_1/dzlr1rtln/image/upload",
-          formData,
+          formData
         );
         newPicUrl = response.data.secure_url;
       }
 
-      const authInfo = JSON.parse(localStorage.getItem("auth-info") || "{}");
-      const updatedAuth = {
-        ...authInfo,
-        displayName: editProfile.displayName.trim(),
-        profilePicUrl: newPicUrl,
-        bio: editProfile.bio,
-      };
-      localStorage.setItem("auth-info", JSON.stringify(updatedAuth));
+      const updated = await apiFetch("/me", {
+        method: "PATCH",
+        body: {
+          displayName: editProfile.displayName.trim(),
+          avatarUrl: newPicUrl,
+          bio: editProfile.bio,
+          statusText: editProfile.statusText,
+        },
+      });
 
       const newProfile = {
-        displayName: editProfile.displayName.trim(),
-        profilePicUrl: newPicUrl,
-        bio: editProfile.bio,
+        displayName: updated.displayName,
+        profilePicUrl: updated.avatarUrl,
+        bio: updated.bio || "",
+        statusText: updated.statusText || "",
       };
       setProfile(newProfile);
-
-      // Let other online users see the updated name / avatar
-      if (socket) {
-        socket.emit("join", {
-          displayName: newProfile.displayName,
-          profilePicUrl: newProfile.profilePicUrl,
-          status: statusMessage,
-          isOnline,
-        });
-      }
-
       toast("Profile updated");
       setShowProfileModal(false);
     } catch (err) {
@@ -458,78 +444,69 @@ function Home() {
     }
   };
 
-  //REQUEST MODAL LOGIC
-  const [isVisible, setIsVisible] = useState(false);
-
-  const handleAccept = (userData) => {
-    setIsVisible(false);
-    navigate(`/chat/${joinInfo.roomId}`, { state: { userData } });
-  };
-
-  const handleDecline = () => {
-    setIsVisible(false);
-  };
-
-  //GROUP LOGIC
-  // For groups, `selectedUsers` holds member EMAILS (see the group modal).
+  // GROUP LOGIC
   const handleCreateGroup = async () => {
-    if (groupName.trim() === "") {
+    if (!groupName.trim()) {
       alert("Please enter a group name.");
       return;
     }
 
     if (selectedUsers.length === 0) {
-      alert("Please select at least one user to add to the group.");
+      alert("Please select at least one friend to add to the group.");
       return;
     }
 
-    // Members = the selected emails + the creator, de-duped.
-    const members = Array.from(
-      new Set([...selectedUsers, email].filter(Boolean)),
-    );
-    const group = {
-      id: nanoid(),
-      name: groupName.trim(),
-      members,
-      createdBy: email,
-    };
+    try {
+      const group = await createGroupConversation({
+        name: groupName.trim(),
+        memberIds: selectedUsers,
+      });
 
-    // Persist durably (survives reloads, reaches offline members on next login)
-    await createGroupDoc(group);
-    // Optimistic local add for the creator
-    setGroups((prev) =>
-      prev.some((g) => g.id === group.id) ? prev : [...prev, group],
-    );
-    // Live relay so online members see it immediately
-    if (socket) socket.emit("createGroup", group);
-
-    // Close the modal and reset the state
-    setIsGroupModalOpen(false);
-    setGroupName("");
-    setSelectedUsers([]);
+      setConversations((prev) => [group, ...prev]);
+      setIsGroupModalOpen(false);
+      setGroupName("");
+      setSelectedUsers([]);
+      toast("Group created successfully!");
+    } catch (err) {
+      console.error("Error creating group:", err);
+      alert(err.message || "Failed to create group");
+    }
   };
 
-  const handleDeleteGroup = (groupId) => {
-    socket.emit("deleteGroup", groupId);
-    setGroups(groups.filter((group) => group.id !== groupId));
+  const handleDeleteGroup = async (groupId) => {
+    try {
+      await deleteConversation(groupId);
+      setConversations((prev) => prev.filter((g) => g.id !== groupId));
+      toast("Group deleted");
+    } catch (err) {
+      console.error("Error deleting group:", err);
+      toast(err.message || "Failed to delete group");
+    }
   };
 
   const handleUserSelection = (userId) => {
     setSelectedUsers((prev) =>
       prev.includes(userId)
         ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
+        : [...prev, userId]
     );
   };
 
-  const handleCreateChat = () => {
-    if (selectedUsers.length === 0) {
-      alert("Please select at least one user to add to the group.");
+  const handleSearch = async (query) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
       return;
     }
-
-    setIsUserModalOpen(false);
-    setSelectedUsers([]);
+    setIsSearching(true);
+    try {
+      const results = await searchUsers(query.trim());
+      setSearchResults(results.filter((u) => u.id !== uid));
+    } catch (err) {
+      console.error("Error searching users:", err);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   return (
@@ -938,15 +915,60 @@ function Home() {
         <div className="flex flex-row">
           <Sidebar
             isLoading={isLoading}
-            users={users}
             notif={notif}
             notifications={notifications}
-            displayName={displayName}
-            onlineUsers={onlineUsers}
-            groups={groups}
+            displayName={profile.displayName || displayName}
+            email={email}
+            uid={uid}
+            onlineUsers={friendsList
+              .filter((f) => f.relation === "friend" && f.online)
+              .map((f) => ({
+                id: f.user?.id || f.id,
+                name: f.user?.displayName || f.user?.name || "Friend",
+                email: f.user?.email,
+                profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
+                isOnline: "online",
+                status: f.user?.statusText || "Available",
+              }))}
+            groups={conversations
+              .filter((c) => c.kind === "group")
+              .map((c) => ({
+                id: c.id,
+                name: c.name,
+                groupPicUrl: c.avatarUrl,
+                members: c.members || [],
+              }))}
+            friends={friendsList
+              .filter((f) => f.relation === "friend" && !f.online)
+              .map((f) => ({
+                id: f.user?.id || f.id,
+                displayName: f.user?.displayName || f.user?.name || "Friend",
+                email: f.user?.email,
+                profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
+              }))}
+            friendEmails={friendsList
+              .filter((f) => f.relation === "friend")
+              .map((f) => f.user?.email)
+              .filter(Boolean)}
+            sentRequests={friendsList
+              .filter((f) => f.relation === "sent")
+              .map((f) => f.id || f.user?.id || f.user?.email)
+              .filter(Boolean)}
+            friendRequests={friendsList
+              .filter((f) => f.relation === "received")
+              .map((f) => ({
+                id: f.id || f.user?.id,
+                displayName: f.user?.displayName || "User",
+                email: f.user?.email,
+                profilePicUrl:
+                  f.user?.avatarUrl ||
+                  "https://api.dicebear.com/7.x/avataaars/svg?seed=Friend",
+              }))}
             handleJoinRoom={handleJoinRoom}
             handleJoinGroup={handleJoinGroup}
-            registeredUsers={registeredUsers}
+            handleSendFriendRequest={handleSendFriendRequest}
+            handleAcceptFriend={handleAcceptFriend}
+            handleDeclineFriend={handleDeclineFriend}
           />
           <div
             style={{
@@ -1206,38 +1228,50 @@ function Home() {
             {/* Content */}
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-200">
-                Select User to Chat With
+                Search User to Chat With
               </h3>
+
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="w-full p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition text-gray-900 dark:text-gray-200 placeholder-gray-500"
+                />
+              </div>
 
               <div
                 className="max-h-64 overflow-y-auto space-y-2 mb-4 
                         scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 
                         scrollbar-track-gray-200 dark:scrollbar-track-gray-800"
               >
-                {onlineUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    onClick={() => handleUserSelection(user.id)}
-                    className={`flex items-center p-2 rounded-lg cursor-pointer transition 
-                ${
-                  selectedUsers.includes(user.id)
-                    ? "bg-blue-100 dark:bg-blue-900 text-gray-900 dark:text-gray-100"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
-                }`}
-                  >
-                    <img
-                      src={user.profilePicUrl}
-                      alt={user.name}
-                      className="w-10 h-10 rounded-full mr-3 border-2 border-gray-300 dark:border-gray-700 shadow-sm"
-                    />
-                    <span className="font-medium flex-grow">{user.name}</span>
-                    {selectedUsers.includes(user.id) && (
-                      <span className="text-blue-400">
-                        <Check className="w-5 h-5" />
-                      </span>
-                    )}
-                  </div>
-                ))}
+                {isSearching ? (
+                  <p className="text-sm text-gray-500 text-center py-4">Searching...</p>
+                ) : searchResults.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    {searchQuery ? "No users found" : "Type to search users"}
+                  </p>
+                ) : (
+                  searchResults.map((user) => (
+                    <div
+                      key={user.id}
+                      onClick={() => {
+                        setIsUserModalOpen(false);
+                        handleJoinRoom(user);
+                      }}
+                      className="flex items-center p-2 rounded-lg cursor-pointer transition hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+                    >
+                      <img
+                        src={user.avatarUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + user.displayName}
+                        alt={user.displayName}
+                        className="w-10 h-10 rounded-full mr-3 border-2 border-gray-300 dark:border-gray-700 shadow-sm object-cover"
+                      />
+                      <span className="font-medium flex-grow">{user.displayName}</span>
+                      <MessageSquare className="w-5 h-5 text-blue-500" />
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="flex sm:justify-end justify-between space-x-3 pt-2">
@@ -1245,13 +1279,7 @@ function Home() {
                   onClick={() => setIsUserModalOpen(false)}
                   className="cursor-pointer px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateChat}
-                  className="cursor-pointer px-6 py-2 bg-blue-600 dark:bg-blue-600 text-white rounded-lg hover:bg-blue-600 dark:hover:bg-blue-700 shadow-md transition"
-                >
-                  Create Chat
+                  Close
                 </button>
               </div>
             </div>
@@ -1307,36 +1335,44 @@ function Home() {
                 scrollbar-thin scrollbar-thumb-blue-300 scrollbar-track-blue-100
                 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800"
               >
-                {/* Pick members from registered users (they carry an email,
-                    which is how group membership is stored durably). */}
-                {users
-                  .filter((user) => user.email && user.email !== email)
-                  .map((user) => (
-                    <div
-                      key={user.email}
-                      className={`flex items-center p-2 rounded-lg cursor-pointer transition
-                    ${
-                      selectedUsers.includes(user.email)
-                        ? "bg-blue-100 dark:bg-blue-900 dark:text-gray-100"
-                        : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
-                    }`}
-                      onClick={() => handleUserSelection(user.email)}
-                    >
-                      <img
-                        src={user.profilePicUrl}
-                        alt={user.displayName}
-                        className="w-10 h-10 rounded-full mr-3 border-2 border-white dark:border-gray-700 shadow-sm"
-                      />
-                      <span className="font-medium flex-grow">
-                        {user.displayName}
-                      </span>
-                      {selectedUsers.includes(user.email) && (
-                        <span className="text-blue-600 dark:text-blue-400">
-                          <Check className="w-5 h-5" />
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                {friendsList.filter((f) => f.relation === "friend").length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    No friends available to add. Connect with friends first!
+                  </p>
+                ) : (
+                  friendsList
+                    .filter((f) => f.relation === "friend")
+                    .map((friend) => {
+                      const u = friend.user || { id: friend.id, displayName: "Friend" };
+                      const uidVal = u.id || friend.id;
+                      return (
+                        <div
+                          key={uidVal}
+                          className={`flex items-center p-2 rounded-lg cursor-pointer transition
+                        ${
+                          selectedUsers.includes(uidVal)
+                            ? "bg-blue-100 dark:bg-blue-900 dark:text-gray-100"
+                            : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+                        }`}
+                          onClick={() => handleUserSelection(uidVal)}
+                        >
+                          <img
+                            src={u.avatarUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + u.displayName}
+                            alt={u.displayName}
+                            className="w-10 h-10 rounded-full mr-3 border-2 border-white dark:border-gray-700 shadow-sm object-cover"
+                          />
+                          <span className="font-medium flex-grow">
+                            {u.displayName}
+                          </span>
+                          {selectedUsers.includes(uidVal) && (
+                            <span className="text-blue-600 dark:text-blue-400">
+                              <Check className="w-5 h-5" />
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                )}
               </div>
 
               <div className="flex justify-between sm:justify-end space-x-3 pt-2">

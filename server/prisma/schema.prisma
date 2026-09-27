@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  blocked
+}
+
+enum ConversationKind {
+  dm
+  group
+}
+
+enum MemberRole {
+  owner
+  member
+}
+
+enum MessageKind {
+  text
+  sticker
+}
+
+model User {
+  id           String   @id                         // Firebase uid
+  email        String   @unique @db.Citext
+  displayName  String   @map("display_name")
+  avatarUrl    String?  @map("avatar_url")
+  bio          String?
+  statusText   String?  @map("status_text")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  friendshipsLo  Friendship[] @relation("lo")
+  friendshipsHi  Friendship[] @relation("hi")
+  memberships    ConversationMember[]
+  messages       Message[]
+  createdConvs   Conversation[]
+  @@map("users")
+}
+
+model Friendship {
+  userLo       String           @map("user_lo")
+  userHi       String           @map("user_hi")
+  requestedBy  String           @map("requested_by")
+  status       FriendshipStatus @default(pending)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  respondedAt  DateTime?        @map("responded_at") @db.Timestamptz
+
+  lo User @relation("lo", fields: [userLo], references: [id], onDelete: Cascade)
+  hi User @relation("hi", fields: [userHi], references: [id], onDelete: Cascade)
+  @@id([userLo, userHi])
+  @@index([userHi])
+  @@map("friendships")
+}
+
+model Conversation {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind       ConversationKind
+  name       String?
+  avatarUrl  String?          @map("avatar_url")
+  createdBy  String?          @map("created_by")
+  dmKey      String?          @unique @map("dm_key")
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamptz
+
+  creator    User?            @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  members    ConversationMember[]
+  messages   Message[]
+  @@index([updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId     String     @map("conversation_id") @db.Uuid
+  userId             String     @map("user_id")
+  role               MemberRole @default(member)
+  joinedAt           DateTime   @default(now()) @map("joined_at") @db.Timestamptz
+  lastReadMessageId  BigInt?    @map("last_read_message_id")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastRead     Message?     @relation(fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id                BigInt      @id @default(autoincrement())
+  conversationId    String      @map("conversation_id") @db.Uuid
+  senderId          String?     @map("sender_id")
+  kind              MessageKind @default(text)
+  body              String
+  isModerated       Boolean     @default(false) @map("is_moderated")
+  moderationReason  String?     @map("moderation_reason")
+  clientMsgId       String?     @map("client_msg_id")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?        @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  readCursors  ConversationMember[]
+  @@unique([conversationId, senderId, clientMsgId])
+  @@index([conversationId, id(sort: Desc)])
+  @@index([senderId])
+  @@map("messages")
+}

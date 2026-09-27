@@ -1,12 +1,27 @@
+import { useContext, useState, useEffect } from "react";
+import { AuthContext } from "../contexts/AuthContext";
+import { auth } from "../Firebase/firebase";
+
 export const useGetUserInfo = () => {
-    const authInfo = JSON.parse(localStorage.getItem("auth-info") || "{}");
-  
-    return {
-      email: authInfo.email || null,
-      userId: authInfo.userId || null,
-      isAuth: authInfo.isAuth || false,
-      displayName: authInfo.displayName || "Guest",
-      profilePicUrl: authInfo.profilePicUrl || null, // Allow it to be null
-    };
+  const context = useContext(AuthContext);
+  if (context) {
+    return context;
+  }
+
+  // Fallback direct subscription if rendered outside AuthProvider
+  const [user, setUser] = useState(auth.currentUser);
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(setUser);
+    return unsub;
+  }, []);
+
+  return {
+    user,
+    uid: user?.uid || null,
+    userId: user?.uid || null,
+    email: user?.email || null,
+    displayName: user?.displayName || "Guest",
+    profilePicUrl: user?.photoURL || null,
+    isAuth: !!user,
   };
-  
+};

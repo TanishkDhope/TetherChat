@@ -16,52 +16,40 @@ const SignUp = () => {
   const {isAuth}=useGetUserInfo()
   const navigate = useNavigate();
 
-    useEffect(()=>{
-      if(isAuth){
-        navigate("/home")
+    useEffect(() => {
+      if (isAuth) {
+        navigate("/");
       }
-    },[])
-  
+    }, [isAuth, navigate]);
 
   const handleSignup = async (e) => {
     e.preventDefault();
-    
     try {
-  
-      // 1. Upload the profile picture to Cloudinary
+      // 1. Upload the profile picture to Cloudinary if provided
       let profilePicUrl = "";
       if (profilePic) {
         const formData = new FormData();
         formData.append("file", profilePic);
-        formData.append("upload_preset", "ml_default");  // Add your Cloudinary upload preset here
+        formData.append("upload_preset", "ml_default");
 
         const response = await axios.post(
           "https://api.cloudinary.com/v1_1/dzlr1rtln/image/upload",
           formData
         );
-        profilePicUrl = response.data.secure_url;  // URL of the uploaded image
+        profilePicUrl = response.data.secure_url;
       }
 
       // 2. Create the user with Firebase Auth
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      console.log(result);
+      await createUserWithEmailAndPassword(auth, email, password);
 
-      const authInfo = {
-        userId: result.user.uid,
+      // 3. Sync user to Postgres via POST /me/sync
+      await addUser({
         displayName: name,
-        email: result.user.email,
-        isAuth: true,
-        profilePicUrl: profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
-      };
-      
-      // 3. Add user to your Firebase Firestore
-      addUser({ email, name, profilePicUrl });
+        avatarUrl: profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
+      });
 
-      localStorage.setItem("auth-info", JSON.stringify(authInfo));
-      navigate("/home");
-    } 
-    catch (err) {
-
+      navigate("/");
+    } catch (err) {
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already in use. Please try a different one.");
       } else if (err.code === "auth/invalid-email") {
@@ -75,31 +63,21 @@ const SignUp = () => {
   };
 
   const handleGoogleSignup = async () => {
-    console.log("Sign up with Google");
-   try{
-    const result = await signInWithPopup(auth, googleProvider);
-    // Google accounts may have no photo — fall back to the default avatar.
-    const photoURL =
-      result.user.photoURL ||
-      "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg";
-    const authInfo = {
-      userId: result.user.uid,
-      displayName: result.user.displayName,
-      email: result.user.email,
-      isAuth: true,
-      profilePicUrl: photoURL,
-    };
-    const email = result.user.email;
-    const name = result.user.displayName;
-    addUser({ email, name, profilePicUrl: photoURL });
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const photoURL =
+        result.user.photoURL ||
+        "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg";
 
-    localStorage.setItem("auth-info", JSON.stringify(authInfo));
-    navigate("/home");
-    
-     } catch (error) {
-     console.log(error);
+      await addUser({
+        displayName: result.user.displayName,
+        avatarUrl: photoURL,
+      });
+
+      navigate("/");
+    } catch (error) {
+      console.error("Google sign up error:", error);
     }
-   
   };
 
   const handleFileChange = (e) => {

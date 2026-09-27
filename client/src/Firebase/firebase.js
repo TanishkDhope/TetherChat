@@ -1,9 +1,7 @@
 import { initializeApp } from "firebase/app";
-import {getAuth} from "firebase/auth";
-import {getFirestore} from "firebase/firestore";
-import { GoogleAuthProvider } from "firebase/auth";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { getAnalytics } from "firebase/analytics";
+import { getAuth, connectAuthEmulator, GoogleAuthProvider } from "firebase/auth";
+import { getMessaging, getToken, isSupported as isMessagingSupported } from "firebase/messaging";
+import { getAnalytics, isSupported as isAnalyticsSupported } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB69PfZIYj-HK5QGsfSkPXLpnvlWoNDJ_8",
@@ -16,25 +14,51 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const db=getFirestore(app);
-export const googleProvider=new GoogleAuthProvider(app);
-export const auth=getAuth(app);
-const analytics = getAnalytics(app);
-export const messaging = getMessaging(app);
+export const googleProvider = new GoogleAuthProvider();
+export const auth = getAuth(app);
 
-export const generateToken=async()=>{
-  const permission = await Notification.requestPermission();
-  console.log(permission);
-  if(permission!=="granted"){
+// Connect to Firebase Auth emulator in development
+if (import.meta.env.DEV) {
+  connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+}
+
+// Analytics with isSupported guard
+export let analytics = null;
+if (typeof window !== "undefined") {
+  isAnalyticsSupported().then((supported) => {
+    if (supported) {
+      analytics = getAnalytics(app);
+    }
+  }).catch(() => {});
+}
+
+// Messaging with isSupported guard
+export let messaging = null;
+if (typeof window !== "undefined") {
+  isMessagingSupported().then((supported) => {
+    if (supported) {
+      messaging = getMessaging(app);
+    }
+  }).catch(() => {});
+}
+
+export const generateToken = async () => {
+  if (typeof window === "undefined" || !("Notification" in window)) {
     return;
   }
   try {
-    const token = await getToken(messaging, { 
-      vapidKey: 
-      "BEv_r260bibAuv3QVsOkaX9kVtznG-KIpopsPJSdmnLGz-WhZM1s1Aq9Pf8SS8P9DLJ5hxAHEJT5T_XFspMcJ9M" 
+    const supported = await isMessagingSupported();
+    if (!supported) return;
+
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      return;
+    }
+    const msg = messaging || getMessaging(app);
+    await getToken(msg, {
+      vapidKey: "BEv_r260bibAuv3QVsOkaX9kVtznG-KIpopsPJSdmnLGz-WhZM1s1Aq9Pf8SS8P9DLJ5hxAHEJT5T_XFspMcJ9M",
     });
-    console.log(token);
   } catch (error) {
-    console.error("Error retrieving FCM registration token:", error);
+    // Suppress notification errors in development / unsupported environments
   }
-}
+};

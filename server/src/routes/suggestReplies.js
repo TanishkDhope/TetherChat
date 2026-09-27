@@ -1,11 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import { fallbackReplies } from "../services/smartRepliesFallback.js";
+import { verifyFirebaseToken } from "../auth.js";
 
 // Proxy for the smart-replies model service (smart-replies/ on Cloud Run).
 // Wire contract is storage-agnostic on purpose — see smart-replies/README.md.
-// When the Postgres migration lands, the only change here is adding the
-// verifyFirebaseToken middleware to the route.
 
 // Read lazily: ESM hoists imports above server.js's dotenv.config() call.
 const serviceUrl = () => (process.env.SMART_REPLIES_URL || "").replace(/\/+$/, "");
@@ -39,7 +38,7 @@ async function fetchModelReplies(body) {
 
 export const suggestRepliesRouter = Router();
 
-suggestRepliesRouter.post("/suggest-replies", async (req, res) => {
+suggestRepliesRouter.post("/suggest-replies", verifyFirebaseToken, async (req, res) => {
   const parsed = SuggestRequest.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid body", issues: parsed.error.issues });

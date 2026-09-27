@@ -1,20 +1,24 @@
-import { db } from "../Firebase/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { apiFetch } from "../lib/api";
 
 export const useAddUser = () => {
-  const addUser = async ({ email, name, profilePicUrl }) => {
+  const addUser = async ({ displayName, avatarUrl, name, profilePicUrl } = {}) => {
     try {
-      const userDocRef = doc(db, "users", email); // Use email as document ID
+      const resolvedDisplayName = displayName || name;
+      const resolvedAvatarUrl = avatarUrl || profilePicUrl;
 
-      await setDoc(userDocRef, {
-        email,
-        displayName: name,
-        profilePicUrl: profilePicUrl || "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg",
-        timestamp: serverTimestamp(),
-      }, { merge: true }); // Merge prevents overwriting existing data
+      const body = {};
+      if (resolvedDisplayName) body.displayName = resolvedDisplayName;
+      if (resolvedAvatarUrl) body.avatarUrl = resolvedAvatarUrl;
 
+      const syncedUser = await apiFetch("/me/sync", {
+        method: "POST",
+        body,
+      });
+
+      return syncedUser;
     } catch (error) {
-      console.error("Error adding user:", error);
+      console.error("Error syncing user with server:", error);
+      throw error;
     }
   };
 

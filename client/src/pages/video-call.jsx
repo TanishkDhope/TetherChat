@@ -1,33 +1,25 @@
 import { useState, useRef, useEffect } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useSpring, animated } from "@react-spring/web"
 import { gsap } from "gsap"
 import { Button } from "@/components/ui/button"
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Settings, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useMobile } from "@/hooks/use-mobile"
-import io from "socket.io-client"
-import { SOCKET_URL } from "../lib/config"
+import { useSocket } from "../hooks/useSocket"
 
 export default function Videocall() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const conversationId = location.state?.conversationId || location.state?.roomId
+  const socket = useSocket()
+
   const [isCallActive, setIsCallActive] = useState(false)
   const [isMicOn, setIsMicOn] = useState(true)
   const [isVideoOn, setIsVideoOn] = useState(true)
   const [connected, setConnected] = useState(false)
   const [callStatus, setCallStatus] = useState("") // "connecting", "connected", "ended"
   const [isFullscreen, setIsFullscreen] = useState(false)
-  
-  // Create the socket exactly once (was previously re-created on every render,
-  // leaking a new connection each time) and tear it down on unmount.
-  const socketRef = useRef(null)
-  if (socketRef.current === null) {
-    socketRef.current = io(SOCKET_URL)
-  }
-  const socket = socketRef.current
-  useEffect(() => {
-    return () => {
-      socketRef.current?.disconnect()
-    }
-  }, [])
   const peerConnection = useRef(null)
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
@@ -80,19 +72,30 @@ export default function Videocall() {
   })
 
   useEffect(() => {
-    socket.on("offer", async (offer) => {
-      console.log("Received offer")
-      createAnsElems(offer)
-    })
+    if (socket && conversationId) {
+      socket.emit("join-conversation", { conversationId })
+    }
+  }, [socket, conversationId])
 
-    socket.on("answer", async (answer) => {
+  useEffect(() => {
+    if (!socket || !conversationId) return
+
+    const handleOffer = async ({ conversationId: id, offer }) => {
+      if (id !== conversationId) return
+      console.log("Received call:offer")
+      createAnsElems(offer)
+    }
+
+    const handleAnswer = async ({ conversationId: id, answer }) => {
+      if (id !== conversationId) return
       if (peerConnection.current) {
         await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer))
         setCallStatus("connected")
       }
-    })
+    }
 
-    socket.on("ice-candidate", async (candidate) => {
+    const handleIce = async ({ conversationId: id, candidate }) => {
+      if (id !== conversationId) return
       if (!peerConnection.current) {
         console.warn("PeerConnection is not initialized. Storing candidate...")
         return
@@ -100,7 +103,7 @@ export default function Videocall() {
 
       if (!peerConnection.current.remoteDescription) {
         console.warn("Remote description not set yet. Retrying in 500ms...")
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise((resolve) => setTimeout(resolve, 500))
       }
 
       try {
@@ -109,9 +112,10 @@ export default function Videocall() {
       } catch (error) {
         console.error("Error adding ICE Candidate:", error)
       }
-    })
+    }
 
-    socket.on("hangup", () => {
+    const handleHangup = ({ conversationId: id }) => {
+      if (id !== conversationId) return
       if (peerConnection.current) {
         endCall()
       } else {
@@ -121,15 +125,20 @@ export default function Videocall() {
           setTimeout(() => setCallStatus(""), 3000)
         }
       }
-    })
+    }
+
+    socket.on("call:offer", handleOffer)
+    socket.on("call:answer", handleAnswer)
+    socket.on("call:ice", handleIce)
+    socket.on("call:hangup", handleHangup)
 
     return () => {
-      socket.off("offer")
-      socket.off("answer")
-      socket.off("ice-candidate")
-      socket.off("hangup")
+      socket.off("call:offer", handleOffer)
+      socket.off("call:answer", handleAnswer)
+      socket.off("call:ice", handleIce)
+      socket.off("call:hangup", handleHangup)
     }
-  }, [isCallActive])
+  }, [socket, conversationId, isCallActive])
 
   // Setup local video stream
   useEffect(() => {
@@ -265,7 +274,9 @@ export default function Videocall() {
 
     const answer = await peerConnection.current.createAnswer()
     await peerConnection.current.setLocalDescription(new RTCSessionDescription(answer))
-    socket.emit("answer", answer)
+    if (socket && conversationId) {
+      socket.emit("call:answer", { conversationId, answer })
+    }
     setConnected(true)
     setTimeout(() => setCallStatus("connected"), 1000)
 
@@ -288,8 +299,8 @@ export default function Videocall() {
     })
 
     peerConnection.current.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", event.candidate)
+      if (event.candidate && socket && conversationId) {
+        socket.emit("call:ice", { conversationId, candidate: event.candidate })
       }
     }
 
@@ -328,7 +339,9 @@ export default function Videocall() {
 
     const offer = await peerConnection.current.createOffer()
     await peerConnection.current.setLocalDescription(new RTCSessionDescription(offer))
-    socket.emit("offer", offer)
+    if (socket && conversationId) {
+      socket.emit("call:offer", { conversationId, offer })
+    }
     setConnected(true)
   }
 
@@ -360,7 +373,9 @@ export default function Videocall() {
     setIsCallActive(false)
     setCallStatus("ended")
     setTimeout(() => setCallStatus(""), 3000)
-    socket.emit("hangup")
+    if (socket && conversationId) {
+      socket.emit("call:hangup", { conversationId })
+    }
 
     const element = document.getElementById("control")
     if (element) element.classList.add("hidden")

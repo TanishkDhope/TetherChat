@@ -56,7 +56,7 @@ const PwaPrompt = () => {
 
   // Check if the user dismissed the prompt recently
   const lastDismissed = localStorage.getItem("pwaPromptDismissed");
-  const dismissedRecently = lastDismissed && Date.now() - parseInt(lastDismissed) < 24 * 60 * 60 * 1000;
+  const dismissedRecently = lastDismissed && Date.now() - Number(lastDismissed) < 24 * 60 * 60 * 1000;
 
   if (!showPrompt || dismissedRecently) return null;
 

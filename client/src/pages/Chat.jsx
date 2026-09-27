@@ -2,11 +2,9 @@ import React, { useState, useRef, useEffect, useContext, useMemo } from "react";
 import { nanoid } from "nanoid";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCheck } from "lucide-react";
-import { socketContext } from "../contexts/socketContext";
-import { io } from "socket.io-client";
-import { SOCKET_URL } from "../lib/config";
+import { useSocket } from "../hooks/useSocket";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
-import { useFirestore } from "../hooks/useFirestore";
+import { useApi } from "../hooks/useApi";
 import { FaCamera } from "react-icons/fa";
 import { MdOutlineMoreVert } from "react-icons/md";
 import { IoSearchSharp } from "react-icons/io5";
@@ -125,170 +123,254 @@ const Chat = () => {
   const [selectedBubbleTheme, setSelectedBubbleTheme] = useState("Default");
   const [loading, setLoading] = useState(true);
   const { roomId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const { uid, displayName, profilePicUrl } = useGetUserInfo();
+  const socket = useSocket();
+  const { getMessages, getConversation } = useApi();
+
+  const [conversation, setConversation] = useState(location.state?.userData || null);
   const [messages, setMessages] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
+  const [isSenderTyping, setIsSenderTyping] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
   const emojiRef = useRef(null);
   const stickerRef = useRef(null);
-  const { displayName, email, profilePicUrl } = useGetUserInfo();
-  const [sender, setSender] = useState(null);
-  const [inRoom, setInRoom] = useState([]);
-  const { storeMessages, getMessages } = useFirestore();
-  const [senderPic, setSenderPic] = useState(null);
-  const [senderObject, setSenderObject] = useState(null);
-  const location = useLocation();
-  // On a hard refresh / direct link, React Router state is gone — fall back to
-  // the room metadata we stashed in localStorage when entering the chat.
-  const userData =
-    location.state?.userData ||
-    JSON.parse(localStorage.getItem(`room_${roomId}`) || "null");
-  const isGroup = !!userData?.isGroup;
+  const typingTimeoutRef = useRef(null);
+  const readTimeoutRef = useRef(null);
+
+  const isGroup = conversation?.kind === "group" || !!conversation?.isGroup;
   const { isDarkMode } = useContext(ThemeContext);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [send, setSend] = useState(()=>{
-    const pref=localStorage.getItem("prefSend")
-    return pref?JSON.parse(pref):{
-      bg: "bg-blue-500",
-      text: "text-white",
-    }
+
+  const [send, setSend] = useState(() => {
+    const pref = localStorage.getItem("prefSend");
+    return pref ? JSON.parse(pref) : { bg: "bg-blue-500", text: "text-white" };
   });
-  const [recieve, setRecieve] = useState(()=>{
-    const pref=localStorage.getItem("prefRecieve")
-    return pref?JSON.parse(pref):{
-      bg: "bg-gray-800",
-      text: "text-white",
-    }
+  const [recieve, setRecieve] = useState(() => {
+    const pref = localStorage.getItem("prefRecieve");
+    return pref ? JSON.parse(pref) : { bg: "bg-gray-800", text: "text-white" };
   });
-  const [backdrop, setBackdrop] = useState(()=>{
-    const pref=localStorage.getItem("prefBackdrop")
-    return pref?JSON.parse(pref):"url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)"
+  const [backdrop, setBackdrop] = useState(() => {
+    const pref = localStorage.getItem("prefBackdrop");
+    return pref ? JSON.parse(pref) : "url(https://i.pinimg.com/736x/b5/39/38/b5393867f0b5fcb64858afe1c918672d.jpg)";
   });
 
-  const senderRef = useRef(sender);
-  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedBackground, setSelectedBackground] = useState("Forest");
-  
-  const [typing, setTyping] = useState(false);
-  const [IsSenderTyping, setIsSenderTyping] = useState(false);
 
-  // Smart replies: the predicate is the only place that knows how a message
-  // identifies its sender (becomes `m.senderId === uid` after the DB migration).
+  const normalizeMsg = (m) => {
+    const id = m.id !== undefined && m.id !== null ? String(m.id) : (m.clientMsgId ? String(m.clientMsgId) : "");
+    const body = m.body !== undefined && m.body !== null ? m.body : (m.text || "");
+    const kind = m.kind || m.type || "text";
+    const createdAt = m.createdAt || m.timestamp || new Date().toISOString();
+    return {
+      ...m,
+      id,
+      body,
+      text: body,
+      kind,
+      type: kind,
+      createdAt,
+      timestamp: createdAt,
+      isModerated: Boolean(m.isModerated),
+      moderationReason: m.moderationReason ?? null,
+      senderId: m.senderId || (m.sender === displayName ? uid : null),
+      sender: m.sender || { displayName: m.senderName || displayName || "User", avatarUrl: null },
+      viewed: Boolean(m.viewed),
+    };
+  };
+
+  // Fetch conversation metadata
+  useEffect(() => {
+    let mounted = true;
+    if (roomId) {
+      getConversation(roomId)
+        .then((conv) => {
+          if (mounted && conv) {
+            setConversation((prev) => ({ ...prev, ...conv }));
+          }
+        })
+        .catch((err) => console.error("Error fetching conversation details:", err));
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [roomId]);
+
+  // Load initial messages
+  useEffect(() => {
+    let mounted = true;
+    const loadInitial = async () => {
+      setLoading(true);
+      try {
+        const res = await getMessages(roomId);
+        if (mounted && res?.messages) {
+          const norm = res.messages.map(normalizeMsg);
+          setMessages(norm);
+          setHasMore(Boolean(res.hasMore));
+        }
+      } catch (err) {
+        console.error("Error fetching initial messages:", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    if (roomId) {
+      loadInitial();
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [roomId]);
+
+  // Smart replies
   const turns = useMemo(
-    () => toTurns(messages, (m) => m.sender === displayName),
-    [messages, displayName]
+    () => toTurns(messages, (m) => m.senderId === uid || m.sender === displayName),
+    [messages, uid, displayName]
   );
   const { replies: smartReplies, loading: smartRepliesLoading } =
     useSmartReplies(turns, { enabled: !loading });
-  const messagesContainerRef = useRef(null);
-const {socket, setSocket} = useContext(socketContext);
+
   const setBubbleTheme = (sent, recieved) => {
     setSend(sent);
     localStorage.setItem("prefSend", JSON.stringify(sent));
     setRecieve(recieved);
     localStorage.setItem("prefRecieve", JSON.stringify(recieved));
   };
+
   const transitions = useTransition(messages, {
-    keys: message => message.id,
-    from: message => ({
+    keys: (message) => message.id || message.clientMsgId,
+    from: (message) => ({
       opacity: 0,
-      transform: `translateX(${message.sender === displayName ? '50px' : '-50px'})`,
+      transform: `translateX(${message.senderId === uid || message.sender === displayName ? "50px" : "-50px"})`,
     }),
-    enter: { opacity: 1, transform: 'translateX(0px)' },
-    leave: { opacity: 0, transform: 'translateY(40px)' },
+    enter: { opacity: 1, transform: "translateX(0px)" },
+    leave: { opacity: 0, transform: "translateY(40px)" },
     config: { tension: 300, friction: 30 },
   });
 
-  const handleTyping = (e) => {
-    const message = e.target.value;
-
-    if (!typing) {
-      setTyping(true);
-      socket.emit("typing", true, roomId);
-    }
-
-    // Clear previous timeout to avoid multiple delayed executions
-    if (message.trim() === "") {
-      setTimeout(() => {
-        setTyping(false);
-        socket.emit("typing", false, roomId);
-      }, 500);
-    }
-  };
-
-  // IntersectionObserver for scroll detection
+  // Socket room join & listeners
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    const endRef = messagesEndRef.current;
-    if (!container || !endRef) return;
+    if (!socket || !roomId) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setShowScrollButton(!entry.isIntersecting); // Show button if not at bottom
-      },
-      { root: container, threshold: 0.8 } // Reduced threshold for better mobile accuracy
-    );
+    socket.emit("join-conversation", { conversationId: roomId });
 
-    observer.observe(endRef);
-
-    return () => observer.disconnect();
-  }, [messages]);
-
-  const handleViewMessages = () => {
-    const localMessages = JSON.parse(
-      localStorage.getItem(`messages_${roomId}`)
-    );
-    let viewedUpdateCount = 0;
-    const updatedMessages = localMessages.map((message) => {
-      // Check if the message is from someone else and is not already viewed
-      if (message.sender !== displayName && !message.viewed) {
-        viewedUpdateCount++; // Increment the count if viewed is being changed
-        return { ...message, viewed: true };
-      }
-      return message;
-    });
-    console.log(viewedUpdateCount);
-    console.log("Updated Messages:", updatedMessages);
-    setMessages(updatedMessages);
-  };
-
-  useEffect(() => {
-    const getMessg = async () => {
-      setLoading(true); // Start loading
-
-      const localMessages = localStorage.getItem(`messages_${roomId}`);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      if (localMessages) {
-        setMessages(JSON.parse(localMessages));
-        console.log("Local Messages Loaded");
-      } else {
-        try {
-          const myMessages = await getMessages(displayName, userData?.name);
-          localStorage.setItem(`msgLen_${roomId}`, myMessages?.length);
-          console.log("MyMessages: ", myMessages);
-
-          if (myMessages?.length) {
-            setMessages(myMessages);
-            localStorage.setItem(
-              `messages_${roomId}`,
-              JSON.stringify(myMessages)
-            );
+    const handleIncomingMessage = (rawMsg) => {
+      if (rawMsg.conversationId && rawMsg.conversationId !== roomId) return;
+      const incoming = normalizeMsg(rawMsg);
+      setMessages((prev) => {
+        if (incoming.clientMsgId) {
+          const optIdx = prev.findIndex((m) => m.clientMsgId === incoming.clientMsgId);
+          if (optIdx !== -1) {
+            const next = [...prev];
+            next[optIdx] = incoming;
+            return next;
           }
-        } catch (error) {
-          console.error("Error fetching messages:", error);
         }
-      }
-
-      setLoading(false); // Stop loading
+        const idIdx = prev.findIndex((m) => m.id === incoming.id);
+        if (idIdx !== -1) {
+          const next = [...prev];
+          next[idIdx] = incoming;
+          return next;
+        }
+        return [...prev, incoming];
+      });
     };
 
-    getMessg();
-  }, [socket, displayName]);
+    const handleReadReceipt = ({ conversationId }) => {
+      if (conversationId !== roomId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.senderId === uid || m.sender === displayName) {
+            return { ...m, viewed: true };
+          }
+          return m;
+        })
+      );
+    };
 
+    const handleTypingEvent = ({ conversationId, userId, isTyping }) => {
+      if (conversationId === roomId && userId !== uid) {
+        setIsSenderTyping(Boolean(isTyping));
+      }
+    };
+
+    socket.on("message", handleIncomingMessage);
+    socket.on("read", handleReadReceipt);
+    socket.on("typing", handleTypingEvent);
+
+    return () => {
+      socket.off("message", handleIncomingMessage);
+      socket.off("read", handleReadReceipt);
+      socket.off("typing", handleTypingEvent);
+    };
+  }, [socket, roomId, uid, displayName]);
+
+  // Read receipts emit on incoming messages
+  useEffect(() => {
+    if (!socket || !roomId || messages.length === 0) return;
+    const lastOtherMsg = [...messages]
+      .reverse()
+      .find((m) => m.senderId !== uid && m.sender !== displayName && m.id && !m.id.startsWith("opt_"));
+    if (lastOtherMsg) {
+      if (readTimeoutRef.current) clearTimeout(readTimeoutRef.current);
+      readTimeoutRef.current = setTimeout(() => {
+        socket.emit("read", { conversationId: roomId, messageId: lastOtherMsg.id });
+      }, 400);
+    }
+    return () => {
+      if (readTimeoutRef.current) clearTimeout(readTimeoutRef.current);
+    };
+  }, [messages, socket, roomId, uid, displayName]);
+
+  // Scroll to bottom on initial load and incoming messages
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages.length, isSenderTyping]);
+
+  // Infinite scroll up pagination handler
+  const handleScroll = async (e) => {
+    const container = e.currentTarget;
+    if (container.scrollTop < 40 && hasMore && !loadingMore && messages.length > 0) {
+      setLoadingMore(true);
+      const prevScrollHeight = container.scrollHeight;
+      const oldestId = messages[0]?.id;
+      try {
+        const res = await getMessages(roomId, oldestId);
+        if (res?.messages?.length) {
+          const older = res.messages.map(normalizeMsg);
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const filtered = older.filter((m) => !existingIds.has(m.id));
+            return [...filtered, ...prev];
+          });
+          setHasMore(Boolean(res.hasMore));
+          requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight - prevScrollHeight;
+          });
+        } else {
+          setHasMore(false);
+        }
+      } catch (err) {
+        console.error("Error fetching older messages:", err);
+      } finally {
+        setLoadingMore(false);
+      }
+    }
+  };
+
+  // Dark mode
   useEffect(() => {
     const htmlElement = document.documentElement;
     if (isDarkMode) {
@@ -298,173 +380,15 @@ const {socket, setSocket} = useContext(socketContext);
     }
   }, [isDarkMode]);
 
+  // Disable body scroll when chat is open
   useEffect(() => {
-    senderRef.current = sender;
-  }, [sender, setSender]);
-
-  const messagesRef = useRef(messages); // Create a ref to hold messages
-
-  useEffect(() => {
-    messagesRef.current = messages; // Keep ref updated with latest messages
-  }, [messages]);
-
-  useEffect(() => {
-    // Check if the socket already exists, and if not, establish a new connection
-    if (!socket) {
-      const newSocket = io(SOCKET_URL);
-      setSocket(newSocket);
-    }
-    return () => {
-      // Optionally, disconnect socket when the component unmounts (if needed)
-      if (socket) {
-        socket.emit("leaveRoom", roomId, displayName);
-        socket.emit("update-room-info", roomId);
-        socket.emit("get-room-info", roomId);
-        const dbLen = JSON.parse(localStorage.getItem(`msgLen_${roomId}`));
-
-        // Firestore persistence is keyed on a 1:1 pair; skip it for group rooms
-        // (group messages still persist per-room in localStorage).
-        if (!isGroup && messagesRef.current.length > 0) {
-          if (dbLen !== messagesRef.current.length) {
-            if (senderRef.current == null) {
-              senderRef.current = userData?.name;
-            }
-            if (senderRef.current) {
-              storeMessages(displayName, senderRef.current, messagesRef.current);
-              localStorage.setItem(
-                `msgLen_${roomId}`,
-                JSON.stringify(messagesRef.current.length)
-              );
-              console.log("CHANGES NEEDED");
-            }
-          } else {
-            console.log("NO CHANGES Needed");
-          }
-        }
-        console.log("Socket disconnected on unmount");
-        socket.disconnect();
-      }
-    };
-  }, [socket, setSocket]);
-
-  useEffect(() => {
-    if (displayName && socket) {
-      socket.emit("join", {
-        displayName,
-        email,
-        profilePicUrl,
-        isOnline: localStorage.getItem("isOnline"),
-      });
-      socket.emit("joinRoom", roomId, displayName);
-      socket.emit("get-room-info", roomId);
-      socket.emit("update-room-info", roomId);
-    }
-  }, [roomId, socket]);
-
-  //SAVE AND LOAD MESSAGES
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
-    }
-  }, [messages, roomId]);
-
-  useEffect(() => {
-    // Load messages from local storage on initial render
-  }, [roomId]);
-
-  useEffect(() => {
-    if (socket) {
-      //ROOM INFO
-      socket.on("room-info", (roomInfo) => {
-        setInRoom(roomInfo.users);
-        console.log(roomInfo.users);
-      });
-
-      socket.on("user-details", (user) => {
-        setSenderObject(user);
-      });
-
-      socket.on("user-notif", (user, message) => {
-        if (!user) {
-          return;
-        }
-        console.log(user);
-        socket.emit("message-notif", message, user.id, displayName, roomId);
-      });
-
-      const handleRecieveMessage = (message) => {
-        setMessages((prev) => {
-          const existingIndex = prev.findIndex((m) => m.id === message.id);
-          if (existingIndex !== -1) {
-            const updated = [...prev];
-            updated[existingIndex] = { ...updated[existingIndex], ...message };
-            return updated;
-          }
-          return [...prev, { ...message }];
-        });
-      };
-
-      const handleMessageModerated = ({ messageId, reason }) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  isModerated: true,
-                  moderationReason: reason || "This message was removed by content moderation.",
-                }
-              : m
-          )
-        );
-      };
-
-      const handleSenderTyping = (state) => {
-        if (state !== null) {
-          setIsSenderTyping(state);
-        } else {
-          setIsSenderTyping(false);
-        }
-      };
-
-      socket.on("recieve-message", handleRecieveMessage);
-      socket.on("message-moderated", handleMessageModerated);
-      socket.on("IsSenderTyping", handleSenderTyping);
-
-      return () => {
-        socket.off("recieve-message", handleRecieveMessage);
-        socket.off("message-moderated", handleMessageModerated);
-        socket.off("IsSenderTyping", handleSenderTyping);
-      };
-    }
-  }, [socket]);
-
-  useEffect(() => {
-    if (sender) {
-      socket.emit("get-user-details", sender);
-    }
-  }, [sender]);
-
-  useEffect(() => {
-    if (socket) {
-      const matchingUser = inRoom.find((user) => user.id !== socket.id);
-      if (matchingUser) {
-        setSender(matchingUser.name);
-        // handleViewMessages();
-        setSenderPic(matchingUser.profilePicUrl);
-      }
-    }
-  }, [inRoom, socket]);
-
-  useEffect(() => {
-    // Disable vertical scrolling
     document.body.style.overflow = "hidden";
-
     return () => {
-      // Re-enable scrolling when leaving the page
       document.body.style.overflow = "auto";
     };
   }, []);
 
+  // Click outside to close emoji/sticker pickers
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (emojiRef.current && !emojiRef.current.contains(event.target)) {
@@ -474,53 +398,103 @@ const {socket, setSocket} = useContext(socketContext);
         setShowStickers(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
+  // IntersectionObserver for scroll-to-bottom button
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    const endRef = messagesEndRef.current;
+    if (!container || !endRef) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowScrollButton(!entry.isIntersecting);
+      },
+      { root: container, threshold: 0.8 }
+    );
+    observer.observe(endRef);
+    return () => observer.disconnect();
+  }, [messages]);
+
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, IsSenderTyping]);
+  const handleTyping = (e) => {
+    if (socket && roomId) {
+      socket.emit("typing", { conversationId: roomId, isTyping: true });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit("typing", { conversationId: roomId, isTyping: false });
+      }, 800);
+    }
+  };
 
-  const handleSubmit = (e) => {
-    socket.emit("typing", false, roomId);
-    e.preventDefault();
-    if (newMessage.trim() === "") return;
-
-    const message = {
-      id: nanoid(),
-      text: newMessage,
-      sender: displayName, // Make sure sender is "user"
-      type: "text",
+  // Send message helper
+  const sendMessageInternal = (content, kind = "text") => {
+    if (!content || !content.trim()) return;
+    const clientMsgId = crypto.randomUUID();
+    const optimistic = normalizeMsg({
+      id: `opt_${clientMsgId}`,
+      clientMsgId,
+      conversationId: roomId,
+      senderId: uid,
+      sender: { displayName: displayName || "Me", avatarUrl: profilePicUrl || null },
+      kind,
+      body: content,
+      status: "sending",
+      createdAt: new Date().toISOString(),
       viewed: false,
-      timestamp: new Date().toISOString(), // Convert to ISO string to ensure proper date formatting
-    };
-    console.log(userData?.name);
-    if (inRoom.length === 2) {
-      message.viewed = true;
-    } else if (inRoom.length === 1) {
-      if (userData?.name == displayName) {
-        message.viewed = true;
-      } else {
-        socket.emit("get-user-notif", userData?.name, message);
-      }
+    });
+
+    setMessages((prev) => [...prev, optimistic]);
+
+    if (socket) {
+      socket.emit(
+        "send-message",
+        {
+          conversationId: roomId,
+          clientMsgId,
+          kind,
+          body: content,
+        },
+        (ack) => {
+          if (ack?.error) {
+            setMessages((prev) =>
+              prev.map((m) => (m.clientMsgId === clientMsgId ? { ...m, status: "failed" } : m))
+            );
+          } else if (ack?.ok && ack.message) {
+            const normAck = normalizeMsg(ack.message);
+            setMessages((prev) =>
+              prev.map((m) => (m.clientMsgId === clientMsgId ? normAck : m))
+            );
+          }
+        }
+      );
     }
 
-    socket.emit("send-message", message, roomId);
+    setTimeout(() => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientMsgId === clientMsgId && m.status === "sending" ? { ...m, status: "failed" } : m
+        )
+      );
+    }, 5000);
+  };
 
-    setMessages((prev) => [...prev, message]);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+    if (socket && roomId) {
+      socket.emit("typing", { conversationId: roomId, isTyping: false });
+    }
+    sendMessageInternal(newMessage.trim(), "text");
     setNewMessage("");
   };
 
@@ -530,18 +504,7 @@ const {socket, setSocket} = useContext(socketContext);
   };
 
   const sendSticker = (sticker) => {
-    const message = {
-      id: nanoid(),
-      text: sticker,
-      sender: displayName,
-      viewed: false,
-      type: "sticker",
-      timestamp: new Date(),
-    };
-
-    socket.emit("send-message", message, roomId);
-
-    setMessages((prev) => [...prev, message]);
+    sendMessageInternal(sticker, "sticker");
     setShowStickers(false);
   };
 
@@ -562,35 +525,39 @@ const {socket, setSocket} = useContext(socketContext);
               onClick={() => navigate("/home")}
             />
             {isGroup ? (
-              userData?.groupPicUrl ? (
+              conversation?.avatarUrl || conversation?.groupPicUrl ? (
                 <img
-                  src={userData.groupPicUrl}
-                  alt={userData?.name}
+                  src={conversation.avatarUrl || conversation.groupPicUrl}
+                  alt={conversation?.name}
                   className="w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md object-cover"
                 />
               ) : (
                 <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md bg-blue-500 text-white flex items-center justify-center text-2xl font-bold">
-                  {userData?.name?.[0]?.toUpperCase() || "#"}
+                  {conversation?.name?.[0]?.toUpperCase() || "#"}
                 </div>
               )
             ) : (
-              <img
-                src={sender ? senderPic : userData?.profilePicUrl}
-                className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md"
-              />
-            )}
-            {!isGroup && userData?.isOnline === "online" && (
-              <div className="absolute left-20 sm:left-24 top-13 w-3 h-3 bg-green-400 rounded-full "></div>
+              conversation?.avatarUrl || conversation?.profilePicUrl ? (
+                <img
+                  src={conversation.avatarUrl || conversation.profilePicUrl}
+                  alt={conversation?.name}
+                  className="cursor-pointer w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md object-cover"
+                />
+              ) : (
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full shadow-md bg-blue-500 text-white flex items-center justify-center text-xl font-bold">
+                  {conversation?.name?.[0]?.toUpperCase() || "U"}
+                </div>
+              )
             )}
             <div className="flex flex-col items-start">
               <h1 className="ml-3 text-lg sm:text-2xl font-bold text-black dark:text-white">
-                {isGroup ? userData?.name : sender ? sender : userData?.name}
+                {conversation?.name || "Chat"}
               </h1>
 
-              <p className="ml-4 text-gray-500 dark:text-gray-300  text-xs">
+              <p className="ml-4 text-gray-500 dark:text-gray-300 text-xs">
                 {isGroup
-                  ? `${userData?.members?.length || userData?.users?.length || 0} members`
-                  : userData?.status || "Available"}
+                  ? `${conversation?.members?.length || 0} members`
+                  : conversation?.status || "Direct Message"}
               </p>
             </div>
           </div>
@@ -602,7 +569,7 @@ const {socket, setSocket} = useContext(socketContext);
             <button onClick={notify} className="hidden sm:block text-2xl cursor-pointer dark:text-white font-bold">
               <FaCamera />
             </button>
-            <button onClick={()=>{navigate("/vc",{ state: { userData, roomId } })}} className="block text-3xl dark:text-white cursor-pointer font-bold">
+            <button onClick={() => navigate("/vc", { state: { conversationId: roomId, userData: conversation } })} className="block text-3xl dark:text-white cursor-pointer font-bold">
               <BiSolidVideo />
             </button>
             <div className="relative">
@@ -718,146 +685,157 @@ const {socket, setSocket} = useContext(socketContext);
         </div>
 
         {/* Messages Container */}
-        {sender !== "User" && (
-          <div
-            style={{
-              backgroundImage: `${backdrop}`,
-              backgroundPosition: "center", // Centers the background image
-              backgroundSize: "cover", // Ensures the image covers the entire container\
-              height: "calc(100dvh - 140px)",
-              msOverflowStyle: "none", // For IE and EdgeF
-              scrollbarWidth: "none", // For Firefox
-            }}
-            className="flex-1 p-1 overflow-y-auto space-y-4"
-          >
-            {loading ? (
-              <ChatSkeleton></ChatSkeleton>
-            ) :  messages.length === 0 ? (
-              // No chats available message
-              <div 
-                className="w-full h-full flex flex-col items-center justify-center text-gray-500"
-                style={{ height: "calc(100dvh - 140px)" }}
-              >
-                <div className="flex flex-col items-center space-y-4">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-16 w-16 opacity-50"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                    />
-                  </svg>
-                  <p className="text-lg font-medium">No messages yet</p>
-                  <p className="text-sm">Start a conversation by sending a message!</p>
-                </div>
+        <div
+          style={{
+            backgroundImage: `${backdrop}`,
+            backgroundPosition: "center",
+            backgroundSize: "cover",
+            height: "calc(100dvh - 140px)",
+            msOverflowStyle: "none",
+            scrollbarWidth: "none",
+          }}
+          className="flex-1 p-1 overflow-y-auto space-y-4"
+        >
+          {loading ? (
+            <ChatSkeleton />
+          ) : messages.length === 0 ? (
+            <div 
+              className="w-full h-full flex flex-col items-center justify-center text-gray-500"
+              style={{ height: "calc(100dvh - 140px)" }}
+            >
+              <div className="flex flex-col items-center space-y-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-16 w-16 opacity-50"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
+                <p className="text-lg font-medium">No messages yet</p>
+                <p className="text-sm">Start a conversation by sending a message!</p>
               </div>
-            ) : (
-              <div
-                style={{
-                  height: "calc(100dvh - 140px)",
-                  msOverflowStyle: "none",
-                  scrollbarWidth: "none",
-                }}
-                ref={messagesContainerRef}
-                className="overflow-y-auto flex-1 p-1 sm:p-6 space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
-              >
-                {transitions((style, message) => (
-  <animated.div
-    key={message.id}
-    style={style}
-    className={`flex w-full px-1 py-1 sm:py-2 ${
-      message.sender === displayName ? "justify-end" : "justify-start"
-    }`}
-  >
-    <div
-      className={`
-        relative max-w-[70%] min-w-[140px] p-3 px-4 shadow-lg transition-all
-        ${
-          message.sender === displayName
-            ? `${send.bg} rounded-2xl rounded-br-none ${send.text}`
-            : `${recieve.bg} rounded-2xl rounded-bl-none ${recieve.text}`
-        }
-        ${
-          message.type === "sticker"
-            ? "text-4xl sm:text-6xl p-3"
-            : "text-md sm:text-base p-3"
-        }
-        transform hover:scale-[1.02]
-      `}
-    >
-      {message.isModerated || message.text === "Message hidden due to content moderation" ? (
-        <div className="space-y-0.5 py-0.5 select-none">
-          {message.sender === displayName ? (
-            <div>
-              <p className="font-semibold text-xs sm:text-sm">Message hidden</p>
-              <p className="text-[11px] sm:text-xs opacity-80">This message was removed by content moderation.</p>
             </div>
           ) : (
-            <div>
-              <p className="italic text-xs sm:text-sm opacity-90">Message hidden due to content moderation</p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <p className="break-words leading-relaxed">
-          {message.text}
-        </p>
-      )}
-      <div className="flex items-center justify-end gap-2 ">
-        <span className="text-[10px] sm:text-xs opacity-75">
-          {new Date(message.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
-        {message.sender === displayName && (
-          <div className="flex gap-0.5">
-            <CheckCheck
-              className={`w-4 h-4 ${
-                message.viewed
-                  ? "text-blue-400"
-                  : "text-gray-400"
-              }`}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  </animated.div>
-))}
-                {IsSenderTyping ? (
-                  <div className="flex w-full px-4 py-2 justify-start">
+            <div
+              style={{
+                height: "calc(100dvh - 140px)",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+              }}
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="overflow-y-auto flex-1 p-1 sm:p-6 space-y-1 w-full scroll-smooth [&::-webkit-scrollbar]:hidden"
+            >
+              {loadingMore && (
+                <div className="text-center py-2 text-xs text-gray-400">Loading older messages...</div>
+              )}
+              {transitions((style, message) => {
+                const isMine = message.senderId === uid || message.sender === displayName;
+                return (
+                  <animated.div
+                    key={message.id || message.clientMsgId}
+                    style={style}
+                    className={`flex w-full px-1 py-1 sm:py-2 ${
+                      isMine ? "justify-end" : "justify-start"
+                    }`}
+                  >
                     <div
-                      className="
-      relative max-w-[70%] p-4 px-4 shadow-lg transition-all
-      bg-[#132E32] rounded-2xl rounded-bl-none
-      text-sm sm:text-base
-      transform hover:scale-[1.02]
-    "
+                      className={`
+                        relative max-w-[70%] min-w-[140px] p-3 px-4 shadow-lg transition-all
+                        ${
+                          isMine
+                            ? `${send.bg} rounded-2xl rounded-br-none ${send.text}`
+                            : `${recieve.bg} rounded-2xl rounded-bl-none ${recieve.text}`
+                        }
+                        ${
+                          message.type === "sticker" || message.kind === "sticker"
+                            ? "text-4xl sm:text-6xl p-3"
+                            : "text-md sm:text-base p-3"
+                        }
+                        transform hover:scale-[1.02]
+                      `}
                     >
-                      <div className="text-white">
-                        <div className="flex flex-row gap-1">
-                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
-                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.3s]"></div>
-                          <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
+                      {message.isModerated || message.text === "Message hidden due to content moderation" || message.body === "Message hidden due to content moderation" ? (
+                        <div className="space-y-0.5 py-0.5 select-none" title={message.moderationReason || undefined}>
+                          {isMine ? (
+                            <div>
+                              <p className="font-semibold text-xs sm:text-sm">Message hidden</p>
+                              <p className="text-[11px] sm:text-xs opacity-80">{message.moderationReason || "This message was removed by content moderation."}</p>
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="italic text-xs sm:text-sm opacity-90">Message hidden due to content moderation</p>
+                              {message.moderationReason && (
+                                <p className="text-[11px] opacity-75">{message.moderationReason}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
+                      ) : (
+                        <p className="break-words leading-relaxed">
+                          {message.body || message.text}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-end gap-2 ">
+                        <span className="text-[10px] sm:text-xs opacity-75">
+                          {new Date(message.createdAt || message.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        {isMine && (
+                          <div className="flex items-center gap-0.5">
+                            {message.status === "failed" ? (
+                              <span className="text-red-400 text-[10px] font-semibold">Failed</span>
+                            ) : message.status === "sending" ? (
+                              <span className="text-gray-300 text-[10px]">Sending...</span>
+                            ) : (
+                              <CheckCheck
+                                className={`w-4 h-4 ${
+                                  message.viewed
+                                    ? "text-blue-400"
+                                    : "text-gray-400"
+                                }`}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </animated.div>
+                );
+              })}
+              {isSenderTyping && (
+                <div className="flex w-full px-4 py-2 justify-start">
+                  <div
+                    className="
+                      relative max-w-[70%] p-4 px-4 shadow-lg transition-all
+                      bg-[#132E32] rounded-2xl rounded-bl-none
+                      text-sm sm:text-base
+                      transform hover:scale-[1.02]
+                    "
+                  >
+                    <div className="text-white">
+                      <div className="flex flex-row gap-1">
+                        <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
+                        <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.3s]"></div>
+                        <div className="w-2 h-2 rounded-full bg-gray-200 animate-bounce [animation-delay:.7s]"></div>
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <></>
-                )}
-                <div ref={messagesEndRef} className="h-10 w-full" />
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              )}
+              <div ref={messagesEndRef} className="h-10 w-full" />
+            </div>
+          )}
+        </div>
         {showScrollButton && (
           <button
             onClick={scrollToBottom}

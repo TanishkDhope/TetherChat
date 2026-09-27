@@ -10,8 +10,9 @@ export const MAX_TURNS = 6;
 export function toTurns(messages, isMine, { maxTurns = MAX_TURNS } = {}) {
   const turns = [];
   for (const m of messages) {
-    if (!m || m.type === "sticker") continue;
-    const text = typeof m.text === "string" ? m.text.trim() : "";
+    if (!m || m.type === "sticker" || m.kind === "sticker") continue;
+    const rawText = m.body || m.text;
+    const text = typeof rawText === "string" ? rawText.trim() : "";
     if (!text) continue;
     turns.push({ role: isMine(m) ? "me" : "other", text: text.slice(0, 500) });
   }

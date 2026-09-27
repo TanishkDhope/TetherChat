@@ -17,11 +17,30 @@ export const Sidebar = ({
   handleSendFriendRequest,
   handleAcceptFriend,
   handleDeclineFriend,
+  uid,
 }) => {
-  const isFriend = (userEmail) => userEmail && friendEmails.includes(userEmail);
-  const isRequested = (userEmail) => userEmail && sentRequests.includes(userEmail);
+  const isFriend = (user) => {
+    if (!user) return false;
+    const uEmail = typeof user === "string" ? user : user.email;
+    const uId = typeof user === "object" ? user.id : null;
+    return Boolean(
+      (uEmail && friendEmails.includes(uEmail)) ||
+      (uId && friends.some((f) => f.id === uId || f.userId === uId || f.user?.id === uId))
+    );
+  };
+  const isRequested = (user) => {
+    if (!user) return false;
+    const uEmail = typeof user === "string" ? user : user.email;
+    const uId = typeof user === "object" ? user.id : null;
+    return Boolean(
+      (uEmail && sentRequests.includes(uEmail)) ||
+      (uId && sentRequests.includes(uId))
+    );
+  };
   const isSelf = (user) =>
-    (email && user.email === email) || user.name === displayName;
+    (uid && user.id === uid) ||
+    (email && user.email === email) ||
+    user.name === displayName;
 
   return (
     <div
@@ -132,8 +151,8 @@ export const Sidebar = ({
               })
               .map((user) => {
                 const self = isSelf(user);
-                const friend = isFriend(user.email);
-                const requested = isRequested(user.email);
+                const friend = isFriend(user);
+                const requested = isRequested(user);
                 return (
                   <div
                     key={user.id}
@@ -264,14 +283,20 @@ export const Sidebar = ({
               .filter(
                 (friend) =>
                   !onlineUsers.some(
-                    (u) => u.email === friend.email || u.name === friend.displayName
+                    (u) => (u.id && (u.id === friend.id || u.id === friend.userId)) ||
+                           (u.email && friend.email && u.email === friend.email) ||
+                           (u.name && (u.name === friend.displayName || u.name === friend.name))
                   )
               )
               .map((friend) => (
                 <div
-                  key={friend.email}
+                  key={friend.id || friend.userId || friend.email}
                   onClick={() =>
-                    handleJoinRoom({ ...friend, name: friend.displayName })
+                    handleJoinRoom({
+                      ...friend,
+                      id: friend.id || friend.userId,
+                      name: friend.displayName || friend.name,
+                    })
                   }
                   className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm transition-all duration-200 cursor-pointer"
                 >

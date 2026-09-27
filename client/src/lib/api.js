@@ -1,30 +1,82 @@
-import { API_URL } from "./config";
 import { auth } from "../Firebase/firebase";
+import { signOut } from "firebase/auth";
+import { API_URL } from "./config";
 
-// Thin JSON fetch wrapper for the Express API. Attaches the Firebase ID token
-// when a user is signed in; the server does not verify it yet, but will once
-// the Postgres migration adds verifyFirebaseToken — no client change needed.
-export async function apiFetch(path, { method = "GET", body, signal } = {}) {
-  const headers = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+export class ApiError extends Error {
+  constructor(status, body, message) {
+    super(message || `API Error: ${status}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
 
-  const user = auth.currentUser;
-  if (user) {
-    try {
-      headers.Authorization = `Bearer ${await user.getIdToken()}`;
-    } catch {
-      // token refresh failed — send unauthenticated; the server decides
+/**
+ * Perform an authenticated API request to the backend.
+ * Automatically injects the Firebase ID token in Authorization header.
+ * On 401, signs out the user and redirects to /login.
+ * Never logs the token.
+ */
+export async function apiFetch(path, { method = "GET", body, headers = {} } = {}) {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("Not authenticated");
+  }
+
+  const token = await currentUser.getIdToken();
+  const requestHeaders = {
+    Authorization: `Bearer ${token}`,
+    ...headers,
+  };
+
+  let formattedBody = body;
+  if (body !== undefined && body !== null && !(body instanceof FormData) && typeof body !== "string") {
+    formattedBody = JSON.stringify(body);
+    if (!requestHeaders["Content-Type"]) {
+      requestHeaders["Content-Type"] = "application/json";
     }
+  } else if (typeof body === "string" && !requestHeaders["Content-Type"]) {
+    requestHeaders["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = path.startsWith("http") ? path : `${API_URL}${normalizedPath}`;
+
+  const res = await fetch(url, {
     method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
+    headers: requestHeaders,
+    body: formattedBody,
   });
-  if (!res.ok) {
-    throw new Error(`${method} ${path} failed with ${res.status}`);
+
+  if (res.status === 401) {
+    try {
+      await signOut(auth);
+    } catch {
+      // ignore signOut error during redirect
+    }
+    window.location.href = "/login";
+    throw new ApiError(401, null, "Session expired. Redirecting to login.");
   }
-  return res.json();
+
+  let data = null;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+  } else {
+    data = await res.text();
+  }
+
+  if (!res.ok) {
+    const errorMsg =
+      (typeof data === "object" && data !== null && (data.error || data.message)) ||
+      res.statusText ||
+      `Request failed with status ${res.status}`;
+    throw new ApiError(res.status, data, errorMsg);
+  }
+
+  return data;
 }

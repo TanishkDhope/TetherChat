@@ -5,20 +5,20 @@ import SignUp from "./pages/SignUp";
 import Home from "./pages/Home";
 import Chat from "./pages/Chat";
 import Videocall from "./pages/video-call";
-
-
+import { AuthProvider } from "./contexts/AuthContext";
 
 function App() {
   return (
-
+    <AuthProvider>
       <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
+        <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
         <Route path="/chat/:roomId" element={<Chat />} />
         <Route path="/vc" element={<Videocall />} />
       </Routes>
-
+    </AuthProvider>
   );
 }
 

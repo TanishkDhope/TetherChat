@@ -3,58 +3,37 @@ import { auth, googleProvider } from "../Firebase/firebase";
 import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { useGetUserInfo } from "../hooks/useGetUserInfo";
-import { useGetUserName } from "../hooks/useGetUsername";
 import { useAddUser } from "../hooks/useAddUser";
-import { useFirestore } from "../hooks/useFirestore";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(""); // State for handling error messages
   const { isAuth } = useGetUserInfo();
-  const { getUsername } = useGetUserName();
   const navigate = useNavigate();
-  const {addUser}=useAddUser()
+  const { addUser } = useAddUser();
   const [loading, setLoading] = useState(false);
- 
 
   useEffect(() => {
     if (isAuth) {
-      navigate("/home");
+      navigate("/");
     }
-  }, []);
+  }, [isAuth, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
       const result = await signInWithEmailAndPassword(auth, email, password);
-      console.log(result.user.email);
-      const { displayName, profilePicUrl } = await getUsername(
-        result.user.email
-      );
-      // Fall back gracefully when the user has no Firestore profile yet.
-      const resolvedName =
-        displayName || result.user.displayName || email.split("@")[0];
+      const resolvedName = result.user.displayName || email.split("@")[0];
       const resolvedPic =
-        profilePicUrl ||
         result.user.photoURL ||
         "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg";
-      const authInfo = {
-        displayName: resolvedName,
-        userId: result.user.uid,
-        email: result.user.email,
-        profilePicUrl: resolvedPic,
-        isAuth: true,
-      };
-      addUser({ email, name: resolvedName, profilePicUrl: resolvedPic });
-      localStorage.setItem("auth-info", JSON.stringify(authInfo));
-      navigate("/home");
-      // Redirect user or update UI based on login success
+
+      await addUser({ displayName: resolvedName, avatarUrl: resolvedPic });
+      navigate("/");
     } catch (err) {
-      // Handle specific Firebase errors
       if (err.code === "auth/user-not-found") {
         setError(
           "No user found with this email. Please check your email or sign up."
@@ -66,42 +45,27 @@ const Login = () => {
       } else {
         setError("Something went wrong. Please try again.");
       }
-    }finally {
+    } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleSignup = async () => {
-      console.log("Sign up with Google");
-      setLoading(true);
-      
-     try{
+    setLoading(true);
+    try {
       const result = await signInWithPopup(auth, googleProvider);
-      // Google accounts may have no photo — fall back to the default avatar.
       const photoURL =
         result.user.photoURL ||
         "https://t3.ftcdn.net/jpg/02/43/30/32/240_F_243303238_bimcrcQFzIPFlQQEWtU54tcPG5SnmsZD.jpg";
-      const authInfo = {
-        userId: result.user.uid,
-        displayName: result.user.displayName,
-        email: result.user.email,
-        isAuth: true,
-        profilePicUrl: photoURL,
-      };
-      const email = result.user.email;
-      const name = result.user.displayName;
-      addUser({ email, name, profilePicUrl: photoURL });
-  
-      localStorage.setItem("auth-info", JSON.stringify(authInfo));
-      navigate("/home");
-      
-       } catch (error) {
-       console.log(error);
-      }
-      // Simulate Google login
-      setTimeout(() => setLoading(false), 2000);
-     
-    };
+
+      await addUser({ displayName: result.user.displayName, avatarUrl: photoURL });
+      navigate("/");
+    } catch (error) {
+      console.error("Google sign in error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <div
     style={{

@@ -12,3 +12,10 @@ graphify*
 
 .playwright*
 .dsh
+
+server/.env
+server/.env.local
+server/serviceAccountKey.json
+server/serviceAccountKey.b64
+output/screenshots/
+server/scripts/migrate/out/

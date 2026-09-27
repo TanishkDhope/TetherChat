@@ -1,22 +1,19 @@
-import { collection,query,where,getDocs } from "firebase/firestore";
-import { db } from "../Firebase/firebase.js";
+import { apiFetch } from "../lib/api";
 
-export const useGetUserName=()=>{
-    const userRef=collection(db, "users");
-    const getUsername = async (email)=>{
-        const userQuery=query(userRef, where("email", "==", email));
-        const user=await getDocs(userQuery);
-        // No matching user doc (e.g. a Google-only account, or a user that was
-        // never written to the "users" collection) — don't index into an empty
-        // result, just return nulls and let the caller fall back.
-        if (user.empty) {
-            return { displayName: null, profilePicUrl: null };
-        }
-        const data = user.docs[0].data();
-        return {
-            displayName: data.displayName,
-            profilePicUrl: data.profilePicUrl
-        }
+export const useGetUserName = () => {
+  const getUsername = async () => {
+    try {
+      const me = await apiFetch("/me");
+      return {
+        displayName: me.displayName,
+        profilePicUrl: me.avatarUrl,
+        user: me,
+      };
+    } catch (error) {
+      console.error("Error fetching username from /me:", error);
+      return { displayName: null, profilePicUrl: null, user: null };
     }
-    return {getUsername}
-}
+  };
+
+  return { getUsername };
+};
