@@ -313,7 +313,7 @@ const Chat = () => {
       socket.off("read", handleReadReceipt);
       socket.off("typing", handleTypingEvent);
     };
-  }, [socket, roomId, uid, displayName]);
+  }, [socket, socket?.connected, roomId, uid, displayName]);
 
   // Read receipts emit on incoming messages
   useEffect(() => {

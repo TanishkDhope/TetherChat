@@ -114,14 +114,17 @@ export function useSocket() {
   const target = {
     socket: s,
     connected,
+    on: (evt, fn) => (s ? s.on(evt, fn) : undefined),
+    off: (evt, fn) => (s ? s.off(evt, fn) : undefined),
+    emit: (...args) => (s ? s.emit(...args) : undefined),
   };
   return new Proxy(target, {
     get(t, prop) {
-      if (prop in t) return t[prop];
       if (s && prop in s) {
         const val = s[prop];
         return typeof val === "function" ? val.bind(s) : val;
       }
+      if (prop in t) return t[prop];
       return undefined;
     },
   });

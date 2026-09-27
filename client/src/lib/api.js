@@ -18,7 +18,15 @@ export class ApiError extends Error {
  * Never logs the token.
  */
 export async function apiFetch(path, { method = "GET", body, headers = {} } = {}) {
-  const currentUser = auth.currentUser;
+  let currentUser = auth.currentUser;
+  if (!currentUser) {
+    currentUser = await new Promise((resolve) => {
+      const unsub = auth.onAuthStateChanged((user) => {
+        unsub();
+        resolve(user);
+      });
+    });
+  }
   if (!currentUser) {
     throw new Error("Not authenticated");
   }
