@@ -124,7 +124,7 @@ export const Sidebar = ({
           Online Users
         </h3>
         <div className="space-y-3">
-          {onlineUsers.length === 0 ? (
+          {isLoading ? (
             <>
               <div className="dark:hidden flex flex-row gap-2">
                 <div className="animate-pulse bg-gray-300 w-14 h-14 rounded-lg"></div>
@@ -142,6 +142,10 @@ export const Sidebar = ({
                 </div>
               </div>
             </>
+          ) : onlineUsers.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-1">
+              No users online
+            </p>
           ) : (
             [...onlineUsers]
               .sort((a, b) => {

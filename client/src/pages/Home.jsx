@@ -62,7 +62,34 @@ function Home() {
   const [conversations, setConversations] = useState([]);
   const [friendsList, setFriendsList] = useState([]);
   const [showOnlineUsers, setShowOnlineUsers] = useState(false);
-  const onlineUsers = friendsList.filter((f) => f.isOnline === "online" || f.isOnline === true);
+  const onlineFriends = friendsList
+    .filter((f) => f.relation === "friend" && (f.online || f.isOnline === "online" || f.isOnline === true))
+    .map((f) => ({
+      id: f.user?.id || f.id,
+      name: f.user?.displayName || f.user?.name || "Friend",
+      displayName: f.user?.displayName || f.user?.name || "Friend",
+      email: f.user?.email,
+      profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
+      isOnline: "online",
+      status: f.user?.statusText || "Available",
+    }));
+
+  const onlineUsers = [
+    ...(isOnline === "online" && uid
+      ? [
+          {
+            id: uid,
+            name: profile?.displayName || displayName || "You",
+            displayName: profile?.displayName || displayName || "You",
+            email: email,
+            profilePicUrl: profile?.avatarUrl || profilePicUrl,
+            isOnline: "online",
+            status: profile?.statusText || "Available",
+          },
+        ]
+      : []),
+    ...onlineFriends,
+  ];
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -230,20 +257,24 @@ function Home() {
       setConversations((prev) => prev.filter((c) => c.id !== id));
     };
 
-    const handlePresenceOnline = ({ userId }) => {
+    const handlePresenceOnline = (data) => {
+      const targetId = data?.userId || data?.uid;
+      if (!targetId) return;
       setFriendsList((prev) =>
         prev.map((f) => {
           const fid = f.id || f.user?.id;
-          return fid === userId ? { ...f, online: true } : f;
+          return fid === targetId ? { ...f, online: true, isOnline: "online" } : f;
         })
       );
     };
 
-    const handlePresenceOffline = ({ userId }) => {
+    const handlePresenceOffline = (data) => {
+      const targetId = data?.userId || data?.uid;
+      if (!targetId) return;
       setFriendsList((prev) =>
         prev.map((f) => {
           const fid = f.id || f.user?.id;
-          return fid === userId ? { ...f, online: false } : f;
+          return fid === targetId ? { ...f, online: false, isOnline: "offline" } : f;
         })
       );
     };
@@ -664,30 +695,34 @@ function Home() {
                   Online Users ({onlineUsers.length})
                 </h3>
                 <div className="max-h-64 overflow-y-auto">
-                  {onlineUsers.map((user) => (
-                    <div
-                      key={user.id}
-                      onClick={() => handleJoinRoom(user)}
-                      className="flex mt-2 rounded-lg justify-between items-center p-3 cursor-pointer transition duration-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      <div className="flex">
-                        <img
-                          src={user.profilePicUrl}
-                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full mr-3"
-                          alt={user.name}
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-sm sm:text-base text-gray-800 dark:text-gray-200">
-                            {user.name}
-                          </span>
-                          <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                            {user.status || "Available"}
-                          </span>
+                  {onlineUsers.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 p-3">No users online</p>
+                  ) : (
+                    onlineUsers.map((user) => (
+                      <div
+                        key={user.id}
+                        onClick={() => handleJoinRoom(user)}
+                        className="flex mt-2 rounded-lg justify-between items-center p-3 cursor-pointer transition duration-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <div className="flex">
+                          <img
+                            src={user.profilePicUrl}
+                            className="w-8 h-8 sm:w-10 sm:h-10 rounded-full mr-3"
+                            alt={user.name}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm sm:text-base text-gray-800 dark:text-gray-200">
+                              {user.name}
+                            </span>
+                            <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                              {user.status || "Available"}
+                            </span>
+                          </div>
                         </div>
+                        <MessageSquareMore className="text-gray-600 dark:text-gray-400 transition duration-300 ease-in-out hover:text-gray-800 dark:hover:text-gray-200" />
                       </div>
-                      <MessageSquareMore className="text-gray-600 dark:text-gray-400 transition duration-300 ease-in-out hover:text-gray-800 dark:hover:text-gray-200" />
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -920,16 +955,7 @@ function Home() {
             displayName={profile.displayName || displayName}
             email={email}
             uid={uid}
-            onlineUsers={friendsList
-              .filter((f) => f.relation === "friend" && f.online)
-              .map((f) => ({
-                id: f.user?.id || f.id,
-                name: f.user?.displayName || f.user?.name || "Friend",
-                email: f.user?.email,
-                profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
-                isOnline: "online",
-                status: f.user?.statusText || "Available",
-              }))}
+            onlineUsers={onlineUsers}
             groups={conversations
               .filter((c) => c.kind === "group")
               .map((c) => ({
@@ -939,7 +965,7 @@ function Home() {
                 members: c.members || [],
               }))}
             friends={friendsList
-              .filter((f) => f.relation === "friend" && !f.online)
+              .filter((f) => f.relation === "friend" && !f.online && f.isOnline !== "online" && f.isOnline !== true)
               .map((f) => ({
                 id: f.user?.id || f.id,
                 displayName: f.user?.displayName || f.user?.name || "Friend",

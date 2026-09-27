@@ -29,7 +29,7 @@ async function notifyFriendsPresence(uid, isOnline) {
     `;
     const eventName = isOnline ? "presence:online" : "presence:offline";
     for (const r of friendRows) {
-      emitToUser(r.friend_id, eventName, { uid, isOnline });
+      emitToUser(r.friend_id, eventName, { userId: uid, uid, isOnline });
     }
   } catch (err) {
     console.error(`[realtime] Error notifying friends of presence for ${uid}:`, err.message);
