@@ -6,6 +6,7 @@ AUDIT.md
 docs
 
 .env*
+!client/.env.production
 .aider*
 
 graphify*
