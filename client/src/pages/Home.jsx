@@ -1393,47 +1393,6 @@ function Home() {
           </div>
         </div>
       )}
-      <div
-        className={`hidden sm:block fixed bottom-4 right-0 transform transition-all duration-500 ease-in-out ${
-          isVisible ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <div className="bg-white rounded-lg shadow-lg p-4 flex items-center gap-4 border border-gray-200 max-w-md">
-          <div className="bg-blue-100 p-2 rounded-full">
-            <UserPlus className="w-6 h-6 text-blue-600" />
-          </div>
-
-          <div className="flex-1">
-            <h3 className="font-medium text-gray-900">Room Join Request</h3>
-            <p className="text-sm text-gray-600">
-              {joinInfo.from} wants you to join room{" "}
-              {joinInfo.roomId ? joinInfo.roomId : "No Room Id"}
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleAccept({ name: joinInfo.from })}
-              className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Accept
-            </button>
-            <button
-              onClick={handleDecline}
-              className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 transition-colors"
-            >
-              Decline
-            </button>
-          </div>
-
-          <button
-            onClick={handleDecline}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
       {/* Edit Profile Modal */}
       {showProfileModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
