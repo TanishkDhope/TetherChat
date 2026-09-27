@@ -25,8 +25,19 @@ if (!getApps().length) {
   } else if (serviceAccountBase64) {
     let serviceAccount;
     try {
-      const decoded = Buffer.from(serviceAccountBase64, "base64").toString("utf8");
-      serviceAccount = JSON.parse(decoded);
+      const trimmed = serviceAccountBase64.trim();
+      if (trimmed.startsWith("{")) {
+        serviceAccount = JSON.parse(trimmed);
+      } else {
+        const cleanB64 = trimmed.replace(/\s+/g, "");
+        const decoded = Buffer.from(cleanB64, "base64").toString("utf8");
+        try {
+          serviceAccount = JSON.parse(decoded);
+        } catch {
+          const sanitized = decoded.replace(/\n/g, "\\n").replace(/\r/g, "");
+          serviceAccount = JSON.parse(sanitized);
+        }
+      }
     } catch (err) {
       throw new Error(`Failed to parse base64 FIREBASE_SERVICE_ACCOUNT: ${err.message}`);
     }
