@@ -1,6 +1,9 @@
 # TetherChat — Firestore → PostgreSQL Migration Plan
 
-**Status:** Phase 0a & 0b Complete (Server Foundation & Client Migration Verified) · Phase 0c/Phase 1 Pending · **Date:** 2026-09-27 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
+**Status:** Phase 0a, 0b & 0c Complete (Server Foundation, Client Migration, and Staging Live on Render + Vercel) · Phase 1 Pending · **Date:** 2026-09-27 · **Scope:** replace Cloud Firestore as the primary datastore with PostgreSQL (Neon cloud database). Firebase Auth is retained. Data access on the Node server uses Prisma.
+
+> [!NOTE]
+> **Migration Posture:** Strict **no-backup, no-rollback posture** for personal project with non-critical data. No cloud export will be taken, no recoverable copy of Firestore data will be retained, and the 7-day bake period (Phase 5) is **SKIPPED BY DESIGN** — no rollback path is intended. Postgres becomes the sole source of truth immediately after verified cutover.
 
 ---
 
@@ -13,7 +16,7 @@
 4. [Data migration strategy (ETL)](#4-data-migration-strategy-etl)
 5. [Application-layer changes](#5-application-layer-changes)
 6. [Cutover plan](#6-cutover-plan)
-7. [Rollback / fallback strategy](#7-rollback--fallback-strategy)
+7. [Rollback / fallback strategy (no-rollback posture)](#7-rollback--fallback-strategy-no-rollback-posture)
 8. [Flaws resolved by this migration](#8-flaws-resolved-by-this-migration)
 9. [Risks, open questions, checklist](#9-risks-open-questions-checklist)
 10. [Implementation status & remaining work roadmap](#10-implementation-status--remaining-work-roadmap)
@@ -37,7 +40,7 @@
 2. Identity is the Firebase `uid` everywhere (today it is a mix of `uid`, email, and mutable display name).
 3. Messages are append-only rows — no whole-history rewrites, no size cap, server-assigned ids and timestamps.
 4. Every mutation that spans two records (friend accept, group create, message + read cursor) is a single transaction.
-5. Zero-loss cutover with a rehearsed, documented rollback.
+5. Single-cutover with no-backup, no-rollback posture (personal project with non-critical data; Firestore decommissioned immediately upon verified load).
 
 ### Non-goals
 
@@ -52,8 +55,8 @@
 | ORM | **Prisma** | Schema-first, built-in migrations, works in plain-JS ESM (the repo is untyped). |
 | Auth | **Keep Firebase Auth** | Smallest blast radius. `firebase-admin` verifies ID tokens on REST and on Socket.IO handshake. Supports Firebase emulator in local development and service account JSON in production (Render). |
 | Hosting | **Neon PostgreSQL** | Server connects via Neon pooled connection string (`DATABASE_URL` with `&pgbouncer=true`) and direct unpooled connection (`DIRECT_URL`) for migrations. |
-| Phasing | **Phase 0 first** | Build schema, Prisma migrations, Express REST/Socket API, client data hooks (`useApi`), and seed script (`prisma/seed.js`) for end-to-end dev/test before executing ETL. |
-| Cutover style | **Single maintenance window** (recommended); dual-write variant documented in §6.3 | User base is small; dual-write adds a second code path to a client that already has too many. |
+| Phasing | **Phase 0a/0b/0c complete** | Schema, migrations, Express REST/Socket API, client data hooks, and staging deployment on Render + Vercel complete. |
+| Cutover style | **Single maintenance window (no-backup, no-rollback)** | User base is small/personal; zero recoverable copy retained; Firestore decommissioned immediately post-verify. |
 | Read receipts | `conversation_members.last_read_message_id` cursor rather than a per-message receipts table | One integer per member per conversation instead of one row per message per member. |
 | Moderation | `is_moderated` boolean + optional `moderation_reason` on `messages` table | Explicit schema support for the Jev AI content moderation system (`server/src/services/moderation.js`). |
 | Search Index | **Deferred GIN index** | Keep initial migration lean; add full-text GIN index in a future migration when search UI is introduced. |
@@ -380,11 +383,12 @@ The `CHECK` constraints, partial indexes, extensions and trigger are not express
 
 All scripts live in `server/scripts/migrate/` and run with `node` (ESM). They are idempotent — every run upserts and records provenance in `migration_log`, so a failed run can be re-executed.
 
-### 4.0 Freeze & snapshot
+### 4.0 Freeze
 
 1. Deploy the client with `VITE_MAINTENANCE=1` (a full-screen "back in N minutes" gate in `App.jsx`) so nothing writes to Firestore during the window.
-2. Take an immutable backup: `gcloud firestore export gs://<bucket>/tetherchat-<date>` — this is also the rollback artefact (§7).
-3. Record the freeze timestamp `T_freeze`; anything in Firestore newer than it after the window means the gate leaked.
+2. Set Firestore rules to `allow write: if false;`.
+3. No cloud export will be performed (strict no-backup posture).
+4. Record the freeze timestamp `T_freeze`; verify zero Firestore writes for 5 minutes.
 
 ### 4.1 Extract — `extract.js`
 
@@ -420,7 +424,7 @@ Produces load-ready NDJSON per target table plus `migration_log.ndjson`. Resolut
 
 **Chats → DM conversations + messages** (the hard part — keys are `nameA_nameB` with sorted display names, and names may themselves contain `_`)
 1. For `docId`, enumerate every split point `i` where `docId[i] === "_"`; candidates are `(docId[0:i], docId[i+1:])`.
-2. Keep candidates where **both** halves exist in `nameToUids` and each maps to exactly one uid. Exactly one candidate → resolved. Zero or >1 → log `ambiguous_chat_key` with the candidate list; the doc is written to `out/unresolved-chats.ndjson`. A hand-maintained `overrides.csv` (`docId,uidA,uidB`) is consulted first on re-runs so manual resolution is repeatable.
+2. Keep candidates where **both** halves exist in `nameToUids` and each maps to exactly one uid. Exactly one candidate → resolved. Zero or >1 → log `ambiguous_chat_key` with the candidate list; the doc is written to `out/unresolved-chats.ndjson`. Skip `overrides.csv` unless ambiguous chat keys surface during dry run.
 3. Resolved pair → `conversations` row with `kind='dm'`, `dm_key = least:greatest`, `id = uuidv5(NAMESPACE, dm_key)`; two `conversation_members` rows.
 4. Each element of `messages[]` → `messages` row:
    - `sender_id`: `message.sender` looked up in the pair first (`sender === nameA → uidA`), else in `nameToUids` if unique, else `NULL` + log `unresolved_sender`.
@@ -439,9 +443,12 @@ Produces load-ready NDJSON per target table plus `migration_log.ndjson`. Resolut
 - `messages.id` is left to `bigserial`, so the load must be sequential per conversation to preserve array order (sort the NDJSON by `(conversation_id, array_index)` before loading; parallelise across conversations only if ordering is by `created_at`).
 - A load run writes `out/load-report.json` (rows attempted / inserted / skipped per table).
 
-### 4.4 Verify — `verify.js`
+### 4.4 Verify — `verify.js` (Sole Pre-Deletion Checkpoint)
 
-Hard gates (any failure blocks cutover):
+> [!IMPORTANT]
+> **No cloud export will be performed.** `verify.js` is the **sole pre-deletion checkpoint**. It must pass all checks (row counts per collection/table, FK integrity, `dm_key` uniqueness, ≥2 members per conversation, spot-check message bodies and user records) before Firestore is deleted. Once Firestore collections are deleted, there is no recovery path. This is accepted.
+
+Hard gates (all must be green before proceeding to cutover and decommission):
 
 ```sql
 -- 1. Counts: every Firestore user with an Auth account has a row
@@ -455,7 +462,7 @@ SELECT conversation_id, count(*) AS n,
        md5(string_agg(body, E'\n' ORDER BY id)) AS body_hash
 FROM messages GROUP BY conversation_id;
 
--- 3. Referential sanity
+-- 3. Referential sanity & invariants
 SELECT count(*) FROM conversation_members cm LEFT JOIN users u ON u.id = cm.user_id WHERE u.id IS NULL;   -- 0
 SELECT count(*) FROM conversations c WHERE kind='dm'
   AND (SELECT count(*) FROM conversation_members WHERE conversation_id=c.id) <> 2;                        -- 0
@@ -469,7 +476,7 @@ Soft checks: 10 random DM conversations opened through the new `GET /conversatio
 
 ### 4.5 Rehearsal
 
-Run 4.1 → 4.4 against a **staging** Postgres from the GCS export at least twice before the real window. Record wall-clock time; the maintenance window is 2× the rehearsed time + 30 minutes. Review every `migration_log` row that is not `ok` and populate `overrides.csv` before the real run.
+Run ONE rehearsal against staging Neon + Render. Review `migration_log` rows; skip `overrides.csv` unless ambiguous chat keys surface during dry run. `verify.js` is the sole checkpoint before running against production Neon.
 
 ---
 
@@ -494,7 +501,7 @@ server/
   src/realtime.js      # Socket.IO handlers (presence, rooms, messages, typing, signalling)
   src/services/*.js    # transactions (below) & moderation.js
   scripts/seed-auth.js # emulator-only auth seeding with deterministic UIDs
-  scripts/migrate/{extract,transform,load,verify,reverse-etl}.js
+  scripts/migrate/{extract,transform,load,verify}.js
   server.js            # bootstrap only
 ```
 
@@ -666,24 +673,24 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 
 ## 6. Cutover plan
 
-### 6.1 Phases (recommended — single window)
+### 6.1 Phases (single maintenance window — no-backup, no-rollback)
 
 | Phase | What | Exit criteria | Status |
 |---|---|---|---|
 | **0a · Server foundation** | Prisma schema + migrations on Neon, `db.js`, `firebase.js`, `auth.js`, all REST routes, `realtime.js`, seed scripts (`prisma/seed.js` + `scripts/seed-auth.js`), `GET /healthz`. NO client changes. | Smoke checklist passes **LOCALLY** with seeded data (via `scripts/seed-auth.js` + `prisma/seed.js`). Server is curl-testable end-to-end. | **COMPLETED** (D8 verification passed: all 11 HTTP checks + socket/REST shape consistency verified) |
 | **0b · Client migration** | `api.js`, `useApi.js`, hook rewrites, `Home.jsx`, `Chat.jsx`, `video-call.jsx`, `Sidebar.jsx`, `firebase.js` cleanup. | Verified against local server + local client + Firebase Auth emulator. Zero Firestore/cache references. Clean build. | **COMPLETED** (Zero `firebase/firestore`, zero `localStorage` caches, 1 Socket.IO instance, Vite build passed) |
-| **0c · Staging deployment** *(optional)* | Deploy 0a+0b to a staging Render web service connected to a Neon staging branch, with a Vercel preview deployment pointing at it. | Smoke checklist passes on staging with seeded data. | **PENDING** |
-| **1 · Announce & freeze** | Tag current `main` as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Confirm no Firestore writes after `T_freeze` (check `users.timestamp`, `groups.createdAt`, chat doc update times in the console). | Zero writes for 5 minutes. | **PENDING** |
-| **2 · Migrate** | `gcloud firestore export` → `extract` → `transform` (with `overrides.csv`) → `load` into **production** Postgres → `verify`. `pg_dump` after load. | All hard gates in 4.4 green; `migration_log` non-ok rows reviewed and accepted. | **PENDING** |
-| **3 · Deploy** | Server: `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN` set; `prisma migrate deploy` already ran in Phase 2; deploy the new server build. Client: deploy build with `VITE_MAINTENANCE=0`, `VITE_API_URL` set. | Health check `GET /healthz` returns DB round-trip OK (Render health check targets `/healthz`). | **PENDING** |
-| **4 · Smoke** | Run 6.2 against production with two real accounts. | All pass. | **PENDING** |
-| **5 · Bake** | 7 days. Firestore stays intact and **read-only** (rules flipped to deny writes). Watch server error rate, `messages` growth, `migration_log` reports from users ("my chat with X is missing"). | No rollback trigger (§7.2) fired. | **PENDING** |
-| **6 · Decommission** | Delete Firestore data (export retained in GCS for 90 days), drop `migration_log`, remove the Firestore branch, remove `firebase/firestore` from client imports, remove unsigned Cloudinary preset (C6, opportunistic). | — | **PENDING** |
+| **0c · Staging deployment** | Deploy 0a+0b to staging Render web service connected to Neon staging branch, with Vercel preview deployment pointing at it. | Staging live on Render and Vercel. | **COMPLETED** (staging live on Render + Vercel) |
+| **1 · Announce & freeze** | Tag repo as `pre-postgres`. Deploy client with `VITE_MAINTENANCE=1`. Set Firestore rules to `allow write: if false;`. Verify zero Firestore writes for 5 min. | Zero writes for 5 minutes. | **PENDING** |
+| **2 · Migrate** | ETL (`extract.js`, `transform.js`, `load.js`, `verify.js`) against production Neon. `verify.js` is sole checkpoint. | All hard gates in 4.4 green; `migration_log` non-ok rows reviewed and accepted. | **PENDING** |
+| **3 · Deploy** | Confirm prod env vars on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`). Run `prisma migrate deploy` on prod Neon. Deploy server (verify `/healthz`). Deploy client with `VITE_MAINTENANCE=0`. | Health check `GET /healthz` returns DB round-trip OK (Render health check targets `/healthz`). | **PENDING** |
+| **4 · Smoke** | Two accounts: send DM, verify in Postgres; verify one group, one friend request. | All pass. | **PENDING** |
+| **5 · Bake** | *SKIPPED BY DESIGN* | No bake period. No read-only window. No rollback path. Postgres is sole source of truth immediately after verified cutover. | **REMOVED / SKIPPED** |
+| **6 · Decommission** | Delete Firestore collections via Firebase CLI (`firebase firestore:delete --all-collections`) or Console UI. NO export. NO GCS backup. NO retention. Drop temporary `migration_log` table from Postgres. Clean up legacy Firestore code branches. | Firestore collections deleted; `migration_log` dropped. | **PENDING** |
 
 > [!NOTE]
-> **Phasing Gate:** Phase 0a and Phase 0b are complete. Next step before production freeze (Phase 1) is either Phase 0c (Staging deployment) or Phase 2 migration rehearsals. Staging (Phase 0c) is defined as a secondary Render service + Neon branch + Vercel preview deployment.
+> **Phasing Gate:** Phases 0a, 0b, and 0c are complete. The next action is Phase 1 (Announce & Freeze) followed by Phase 2 (ETL execution with `verify.js` as the sole checkpoint).
 
-### 6.2 Smoke checklist (staging and production)
+### 6.2 Smoke checklist (production)
 
 1. Email sign-up → profile appears in `users`; Google sign-in for an existing email maps to the same row (uid match, no duplicate).
 2. Edit profile (name + avatar) → reload → persists; the other user sees the new name in an old conversation.
@@ -693,47 +700,32 @@ Prisma equivalents: `prisma.message.findMany({ where: { conversationId, id: { lt
 6. Group with 3 members: created → all see it; message → all receive; owner deletes → gone for all, non-owner cannot delete (403).
 7. Video call A↔B while C disconnects elsewhere → call survives.
 8. Sign out → sign in → history intact (no localStorage dependence).
-9. A migrated DM: opens, scrolls back to the first migrated message, timestamps plausible, stickers render (A11).
-
-### 6.3 Optional dual-write variant (if a window is unacceptable)
-
-1. Deploy the server with `DATA_BACKEND=dual`: every write goes to Postgres (authoritative) **and** is mirrored to Firestore in the old shape by a `firestoreMirror.js` adapter (users doc, friend arrays, group docs, and appending to `chats/<A_B>.messages` via `arrayUnion`).
-2. Backfill Postgres from a Firestore export with the ETL (Phase 2) while dual-writing; the ETL's `skipDuplicates` + `client_msg_id` unique key make it safe to overlap.
-3. Flip the client to the API (Phase 3). Firestore now lags Postgres only by the mirror's latency.
-4. After the bake, set `DATA_BACKEND=postgres` and remove the mirror.
-
-Cost: the mirror must reproduce the name-keyed chat doc (B2) to be useful for rollback, which means keeping the display-name → chat-key logic alive. Only worth it if downtime is genuinely not an option.
 
 ---
 
-## 7. Rollback / fallback strategy
+## 7. Rollback / fallback strategy (no-rollback posture)
 
-### 7.1 Artefacts to have before Phase 1
+> [!WARNING]
+> **No-Rollback Posture.** This migration intentionally retains no copy of Firestore data and no rollback path is intended. This is a personal project with non-critical data. No GCS backup will be taken, no 90-day retention will be maintained, and `reverse-etl.js` will NOT be implemented.
 
-- Git tag `pre-postgres` on both `client/` and `server/` (same repo, one tag).
-- Firestore export in GCS (Phase 2 step 1). Firestore itself is untouched during the window — it is the rollback database.
-- `pg_dump -Fc` after load and again before each later phase.
-- Deployed-but-inactive previous builds on Render/Vercel (both platforms keep previous deploys; note the deploy ids).
+### 7.1 Pre-cutover state
 
-### 7.2 Rollback triggers
+- Git tag `pre-postgres` on both `client/` and `server/` (commit checkpoint prior to migration).
+- Rehearsal run against staging Neon + Render completed to validate ETL logic.
+- Deployed previous builds on Render/Vercel available for immediate rollback *only before* Firestore is deleted.
 
-| Trigger | Action |
-|---|---|
-| Any hard gate in 4.4 fails and cannot be fixed inside the window | Abort before Phase 3: redeploy client with `VITE_MAINTENANCE=0` from tag `pre-postgres`. Nothing to undo — Firestore was never modified. |
-| Smoke checklist (6.2) fails in production | Same as above, plus keep the loaded Postgres for diagnosis. |
-| During bake: elevated 5xx on `/conversations/*`, users reporting missing conversations that `migration_log` doesn't explain, data corruption | Roll back with reverse-ETL (7.3). |
+### 7.2 Pre-deletion failure handling
 
-### 7.3 Rolling back after cutover (bake period)
+- `verify.js` is the **sole pre-deletion checkpoint**.
+- If any hard gate in `verify.js` fails during Phase 2 before Firestore collections are deleted:
+  1. Abort cutover: do not proceed to Phase 3 or Phase 6.
+  2. Keep Firestore rules locked while debugging ETL transform issues, or redeploy client with `VITE_MAINTENANCE=0` from tag `pre-postgres`.
+  3. Because Firestore data has not yet been deleted at this stage, the original database is still intact.
 
-1. Set `VITE_MAINTENANCE=1`; record `T_rollback`.
-2. Run `scripts/migrate/reverse-etl.js`: for every `messages` row with `created_at > T_freeze`, append into Firestore `chats/<nameA_nameB>.messages` (rebuilding the name key from the two members' current display names — the same rule `useFirestore.js:6-8` uses), and re-create any `friendships`/`conversations(kind='group')` rows created after `T_freeze` in their old shapes. Group messages have no Firestore home and are lost on rollback — state this in the announcement.
-3. Flip Firestore rules back to read-write.
-4. Redeploy `pre-postgres` client and server.
-5. `VITE_MAINTENANCE=0`. Post-mortem before retrying.
+### 7.3 Post-deletion state (point of no return)
 
-### 7.4 Feature-flag fallback inside the new server
-
-`DATA_BACKEND=firestore|postgres` is honoured by the new server for **reads of legacy DM history only**: if a conversation has a `migration_log` row with status ≠ `ok`, `GET /conversations/:id/messages` can fall through to reading the old Firestore doc via `firebase-admin` until the override is resolved. This keeps "my old chat is missing" from being an outage while the mapping is fixed by hand. Removed in Phase 6.
+- Once `verify.js` passes and Phase 6 runs (`firebase firestore:delete --all-collections`), **Firestore data is permanently destroyed**.
+- There is no reverse-ETL, no bake period, and no recovery path. Postgres is the sole permanent store. This posture is explicitly accepted.
 
 ---
 
@@ -774,7 +766,7 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 
 | Risk | Mitigation |
 |---|---|
-| Chat keys `nameA_nameB` that cannot be resolved unambiguously (duplicate display names, names containing `_`). | `ambiguous_chat_key` quarantine + `overrides.csv`; §7.4 read-through fallback keeps history reachable until resolved. Measure the count in rehearsal. |
+| Chat keys `nameA_nameB` that cannot be resolved unambiguously (duplicate display names, names containing `_`). | `ambiguous_chat_key` quarantine; resolved via `overrides.csv` if surfaced during staging rehearsal. |
 | Firestore `users` docs with no Firebase Auth account (created by a pre-Auth code path). | Logged `orphan_user`; they cannot log in today, so nothing is lost. |
 | Google-login users whose Firestore `displayName` differs from what they typed at email sign-up. | Transform prefers the Firestore doc value (what other users saw in chats). |
 | Free-tier Postgres limits (Render: 1 GB / expires after 90 days on free; Neon: compute autosuspend). | Pick the tier before Phase 0; `messages` at 4 000 chars max grows slowly at this scale. Add a `pg_dump` cron. |
@@ -782,9 +774,9 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
 | Socket.IO across >1 server instance. | Out of scope now; `@socket.io/redis-adapter` + presence in Redis when needed — the design already keys everything by uid/conversation so nothing else changes. |
 | `BigInt` message ids leaking into JSON. | `db.js` installs a `JSON.stringify` replacer / serialise as strings in the API layer; client treats ids as opaque strings. |
 
-### Resolved Decisions (Alignment from 2026-09-26 Review)
+### Resolved Decisions (Alignment from 2026-09-26 Review & 2026-09-27 Posture Update)
 
-1. **Phasing & Roadmap**: Split into **Phase 0a (Server foundation)**, **Phase 0b (Client migration)**, and **Phase 0c (Staging deployment, optional)**. Phase 0a must be fully green locally before Phase 0b starts; Phase 0b must be fully green before Phase 1 (production freeze & ETL) begins.
+1. **Phasing & Roadmap**: Split into **Phase 0a (Server foundation)**, **Phase 0b (Client migration)**, and **Phase 0c (Staging deployment)**. Phases 0a, 0b, and 0c are **ALL COMPLETE** with staging live on Render + Vercel. Next is Phase 1 (Announce & Freeze) and Phase 2 (ETL).
 2. **Database Provider & Connection**: **Neon PostgreSQL** (AWS `ap-southeast-1`). Configured with pooled connection `DATABASE_URL` (`&pgbouncer=true`) and direct unpooled connection `DIRECT_URL` for migrations.
 3. **Authentication Strategy**: Firebase Auth retained. In local development and automated E2E testing, use Firebase Auth emulator (`FIREBASE_AUTH_EMULATOR_HOST` + `FIREBASE_PROJECT_ID`). In production deployed on Render, use Firebase Admin Service Account JSON key (`FIREBASE_SERVICE_ACCOUNT` + `FIREBASE_PROJECT_ID`).
 4. **Content Moderation Integration**: Explicit columns `is_moderated boolean DEFAULT false` and `moderation_reason text` added to `messages` table schema and Prisma model. Moderation call is hoisted **outside** the database transaction in `messages.send` to protect connection pooling.
@@ -793,7 +785,7 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
    - `server/prisma/seed.js` — DB-only, idempotent upserts across users → friendships → conversations → conversation_members → messages. Enforces foreign key referential integrity.
    - `server/scripts/seed-auth.js` — Emulator-only. Asserts `FIREBASE_AUTH_EMULATOR_HOST` is set, creates Firebase Auth users with deterministic UIDs, then invokes `prisma/seed.js`.
 7. **Health Monitoring**: `GET /healthz` performs `await prisma.$queryRaw`SELECT 1`` and returns `{ ok: true, mode: <"emulator"|"prod">, db: "up" }`. Render health check points to `/healthz`.
-8. **Data Retention**: Firestore export retained in GCS for 90 days following cutover.
+8. **Data Retention & Rollback Posture**: Strict no-backup, no-rollback posture. No cloud export or GCS backup will be taken; no 90-day retention; `reverse-etl.js` is omitted. Firestore collections will be deleted immediately after `verify.js` passes.
 9. **Blocked Users**: `blocked` enum value kept in schema for future-proofing, no UI exposed in v1.
 
 ### Execution checklist
@@ -839,28 +831,36 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
   - [x] Audit & eliminate all `localStorage` message/room caching (0 occurrences in `client/src`)
   - [x] Audit socket connection instances (`io()` appears exactly once in `useSocket.js`)
   - [x] Verify production build (`npm run build` succeeds cleanly)
-- [ ] **Phase 0c · Staging Deployment (Optional)**:
-  - [ ] Deploy 0a to staging Render web service & 0b to Vercel preview deployment connected to Neon staging branch
-  - [ ] Re-run smoke checklist with seeded data
+- [x] **Phase 0c · Staging Deployment (COMPLETE — 2026-09-27)**:
+  - [x] Deploy server to staging Render Web Service connected to Neon staging branch
+  - [x] Deploy client to Vercel preview deployment pointing to staging Render
+  - [x] Verify staging environment live on Render and Vercel
 - [ ] **Phase 1 · Announce & Freeze**:
-  - [ ] Tag `pre-postgres`; deploy client maintenance gate (`VITE_MAINTENANCE=1`); record `T_freeze`
-  - [ ] Confirm zero Firestore writes for 5 minutes
+  - [ ] Tag repo as `pre-postgres`
+  - [ ] Deploy client with `VITE_MAINTENANCE=1`
+  - [ ] Set Firestore rules to `allow write: if false;`
+  - [ ] Verify zero Firestore writes for 5 min (`T_freeze`)
 - [ ] **Phase 2 · Data Migration (ETL)**:
-  - [ ] Implement `scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js`
-  - [ ] Implement `scripts/migrate/reverse-etl.js` (used during bake for rollback — see §7.3)
-  - [ ] Establish `overrides.csv` workflow (`docId,uidA,uidB`) consulted before automatic resolution in `transform.js`
-  - [ ] Two timed rehearsals against staging Postgres (measure wall-clock; window = 2× rehearsal + 30 min buffer)
-  - [ ] Export Firestore → ETL (`extract.js`, `transform.js`, `load.js`) → verify hard gates → `pg_dump`
-- [ ] **Phase 3 · Production Deployment & Cutover**:
-  - [ ] Set production env vars on Render (`DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`)
-  - [ ] Run `prisma migrate deploy` on production Neon DB
-  - [ ] Deploy server to Render; confirm `GET /healthz` returns DB round-trip OK
-  - [ ] Deploy client to Vercel with `VITE_MAINTENANCE=0`, `VITE_API_URL`
-- [ ] **Phase 4 · Smoke Testing**:
-  - [ ] Run Smoke Checklist 6.2 in production with two real accounts
-- [ ] **Phase 5–6 · Bake & Decommission**:
-  - [ ] 7-day bake; keep Firestore read-only
-  - [ ] Decommission Firestore; drop `migration_log`; keep backup per 90-day retention
+  - [ ] Implement `server/scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js` (DO NOT implement `reverse-etl.js` — no rollback)
+  - [ ] Skip `overrides.csv` unless ambiguous chat keys surface during dry run
+  - [ ] Run ONE rehearsal against staging Neon + Render
+  - [ ] Run ETL against production Neon
+  - [ ] Run `verify.js` — must be all green before proceeding (sole checkpoint)
+- [ ] **Phase 3 · Production Cutover**:
+  - [ ] Confirm prod env vars on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`)
+  - [ ] Run `npx prisma migrate deploy` on prod Neon
+  - [ ] Deploy server; verify `GET /healthz` returns HTTP 200 `{ ok: true, mode: "prod", db: "up" }`
+  - [ ] Deploy client with `VITE_MAINTENANCE=0`
+- [ ] **Phase 4 · Production Smoke Testing**:
+  - [ ] Two accounts: send DM, verify in Postgres
+  - [ ] Verify one group, one friend request
+- [ ] **Phase 5 · Bake**:
+  - [x] *SKIPPED BY DESIGN* (No bake period. No read-only window. No rollback. Proceed directly to Phase 6)
+- [ ] **Phase 6 · Decommission**:
+  - [ ] Delete Firestore collections via Firebase CLI (`firebase firestore:delete --all-collections`) or Console UI
+  - [ ] NO export. NO GCS backup. NO retention
+  - [ ] Drop temporary `migration_log` table from Postgres
+  - [ ] Clean up legacy Firestore code branches
 
 ---
 
@@ -920,35 +920,41 @@ Not addressed by the migration (still recommended, independent work): **A12** (t
   - `grep -rn "io(" client/src/` $\to$ **Exactly 1 match** in `useSocket.js`.
   - `npm run build` $\to$ **Passed cleanly** (1,767 modules transformed in 6.46s).
 
+#### 3. Staging Deployment (Phase 0c) — COMPLETE
+- **Server Staging**: Deployed to staging Render Web Service connected to Neon PostgreSQL.
+- **Client Staging**: Deployed to Vercel preview deployment pointing `VITE_API_URL` to staging Render.
+- **Staging Verification**: Staging environment live on Render + Vercel.
+
 ---
 
-### 10.2 What is left to do (Phases 0c – 6)
+### 10.2 Remaining work roadmap (no-rollback posture)
+
+> [!WARNING]
+> ⚠️ **No-Rollback Posture.** This migration intentionally retains no copy of Firestore data. Once `verify.js` passes and Firestore collections are deleted, Postgres is the sole source of truth and there is no recovery path. This is accepted for a personal project with non-critical data.
 
 ```
 [Phase 0a: Server Foundation] ──> COMPLETE
 [Phase 0b: Client Migration]  ──> COMPLETE
+[Phase 0c: Staging Deployed]  ──> COMPLETE (Render + Vercel)
              │
-             ├──> [Phase 0c: Staging Deployment] (Optional staging validation on Render/Neon branch/Vercel preview)
-             │
-             └──> [Phase 1: Announce & Freeze] (Git tag 'pre-postgres', VITE_MAINTENANCE=1, 5-min zero writes)
+             └──> [Phase 1: Announce & Freeze] (Git tag 'pre-postgres', VITE_MAINTENANCE=1, rules lock)
                     │
-                    └──> [Phase 2: Data Migration (ETL)] (extract.js, transform.js, load.js, verify.js, rehearsals)
+                    └──> [Phase 2: Data Migration (ETL)] (extract.js, transform.js, load.js, verify.js, 1 rehearsal)
                            │
                            └──> [Phase 3: Production Cutover] (prisma migrate deploy, Render deploy, Vercel deploy)
                                   │
-                                  └──> [Phase 4: Smoke Testing] (Run Smoke Checklist 6.2 on production)
+                                  └──> [Phase 4: Smoke Testing] (Two accounts: DM, group, friend request)
                                          │
-                                         └──> [Phase 5: 7-Day Bake Period] (Firestore read-only, log monitoring)
+                                         └──> [Phase 5: SKIPPED] (No bake period, no rollback)
                                                 │
-                                                └──> [Phase 6: Decommission] (Archive GCS export, drop Firestore)
+                                                └──> [Phase 6: Decommission] (firebase firestore:delete, drop migration_log)
 ```
 
 | Phase | Milestone | Deliverables / Actions Required |
 |---|---|---|
-| **Phase 0c** | **Staging Deployment** *(Optional)* | 1. Create a Neon DB development/staging branch.<br>2. Deploy server to a staging Render Web Service with staging DB URL.<br>3. Deploy client to a Vercel Preview branch pointing `VITE_API_URL` to staging Render.<br>4. Run Smoke Checklist 6.2 with seeded accounts. |
-| **Phase 1** | **Announce & Freeze** | 1. Git tag `pre-postgres` across repo.<br>2. Build and deploy client maintenance gate (`VITE_MAINTENANCE=1`).<br>3. Verify zero Firestore writes for 5 minutes (`T_freeze`). |
-| **Phase 2** | **Data Migration (ETL)** | 1. Implement ETL scripts in `server/scripts/migrate/` (`extract.js`, `transform.js`, `load.js`, `verify.js`, `reverse-etl.js`).<br>2. Populate `overrides.csv` for resolving ambiguous chat keys.<br>3. Run 2 timed rehearsals against staging DB to determine cutover window duration.<br>4. Perform production Firestore export (`gcloud firestore export`) and ETL load into production Neon Postgres.<br>5. Run `pg_dump` backup of loaded database. |
-| **Phase 3** | **Production Cutover** | 1. Set production environment variables on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`).<br>2. Run `npx prisma migrate deploy` on production Neon database.<br>3. Deploy production server to Render; verify `GET /healthz` returns HTTP 200 `{ ok: true, mode: "prod", db: "up" }`.<br>4. Deploy production client to Vercel with `VITE_MAINTENANCE=0` and production `VITE_API_URL`. |
-| **Phase 4** | **Production Smoke Testing** | 1. Execute Smoke Checklist 6.2 end-to-end with two real production accounts. |
-| **Phase 5** | **7-Day Bake Period** | 1. Set Firestore security rules to read-only (`allow write: if false;`).<br>2. Monitor Render backend logs and Neon query latency.<br>3. Monitor for unhandled exceptions or user reports of missing conversations. |
-| **Phase 6** | **Decommission & Cleanup** | 1. Ensure Firestore export is retained in Google Cloud Storage for 90 days.<br>2. Delete Cloud Firestore database collections.<br>3. Drop temporary `migration_log` table from PostgreSQL.<br>4. Clean up any lingering legacy code branches. |
+| **Phase 1** | **Announce & Freeze** | 1. Tag repo as `pre-postgres`.<br>2. Deploy client with `VITE_MAINTENANCE=1`.<br>3. Set Firestore rules to `allow write: if false;`.<br>4. Verify zero Firestore writes for 5 min. |
+| **Phase 2** | **Data Migration (ETL)** | 1. Implement `server/scripts/migrate/extract.js`, `transform.js`, `load.js`, `verify.js`.<br>   **DO NOT** implement `reverse-etl.js` — no rollback.<br>2. Skip `overrides.csv` unless ambiguous chat keys surface during dry run.<br>3. Run ONE rehearsal against staging Neon + Render.<br>4. Run ETL against production Neon.<br>5. Run `verify.js` — must be all green before proceeding. This is the **ONLY** checkpoint. |
+| **Phase 3** | **Production Cutover** | 1. Confirm prod env vars on Render (`DATABASE_URL`, `DIRECT_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`, `CORS_ORIGIN`, `PORT`).<br>2. `npx prisma migrate deploy` on prod Neon.<br>3. Deploy server; verify `GET /healthz` returns HTTP 200 `{ ok: true, mode: "prod", db: "up" }`.<br>4. Deploy client with `VITE_MAINTENANCE=0`. |
+| **Phase 4** | **Production Smoke Testing** | 1. Two accounts: send DM, verify in Postgres.<br>2. Verify one group, one friend request. |
+| **Phase 5** | **—** | **SKIPPED.** No bake period. No read-only window. No rollback. Proceed directly to Phase 6. |
+| **Phase 6** | **Decommission** | 1. Delete Firestore collections via Firebase CLI:<br>   `firebase firestore:delete --all-collections`<br>   (or Console UI).<br>2. **NO export. NO GCS backup. NO retention.**<br>3. Drop temporary `migration_log` table from Postgres.<br>4. Clean up legacy Firestore code branches. |
