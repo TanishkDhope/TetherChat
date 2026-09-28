@@ -16,6 +16,7 @@ import {
   Send,
   Settings,
   Sun,
+  Moon,
   Palette,
   UserPlus,
   Users,
