@@ -62,34 +62,6 @@ function Home() {
   const [conversations, setConversations] = useState([]);
   const [friendsList, setFriendsList] = useState([]);
   const [showOnlineUsers, setShowOnlineUsers] = useState(false);
-  const onlineFriends = friendsList
-    .filter((f) => f.relation === "friend" && (f.online || f.isOnline === "online" || f.isOnline === true))
-    .map((f) => ({
-      id: f.user?.id || f.id,
-      name: f.user?.displayName || f.user?.name || "Friend",
-      displayName: f.user?.displayName || f.user?.name || "Friend",
-      email: f.user?.email,
-      profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
-      isOnline: "online",
-      status: f.user?.statusText || "Available",
-    }));
-
-  const onlineUsers = [
-    ...(isOnline === "online" && uid
-      ? [
-          {
-            id: uid,
-            name: profile?.displayName || displayName || "You",
-            displayName: profile?.displayName || displayName || "You",
-            email: email,
-            profilePicUrl: profile?.avatarUrl || profilePicUrl,
-            isOnline: "online",
-            status: profile?.statusText || "Available",
-          },
-        ]
-      : []),
-    ...onlineFriends,
-  ];
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -137,6 +109,35 @@ function Home() {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const onlineFriends = friendsList
+    .filter((f) => f.relation === "friend" && (f.online || f.isOnline === "online" || f.isOnline === true))
+    .map((f) => ({
+      id: f.user?.id || f.id,
+      name: f.user?.displayName || f.user?.name || "Friend",
+      displayName: f.user?.displayName || f.user?.name || "Friend",
+      email: f.user?.email,
+      profilePicUrl: f.user?.avatarUrl || f.user?.profilePicUrl,
+      isOnline: "online",
+      status: f.user?.statusText || "Available",
+    }));
+
+  const onlineUsers = [
+    ...(isOnline === "online" && uid
+      ? [
+          {
+            id: uid,
+            name: profile?.displayName || displayName || "You",
+            displayName: profile?.displayName || displayName || "You",
+            email: email,
+            profilePicUrl: profile?.avatarUrl || profilePicUrl,
+            isOnline: "online",
+            status: profile?.statusText || "Available",
+          },
+        ]
+      : []),
+    ...onlineFriends,
+  ];
 
   const [notifications, setNotifications] = useState({});
   const { isDarkMode, setIsDarkMode } = useContext(ThemeContext);
